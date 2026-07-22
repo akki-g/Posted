@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Posted",
+    "slug": "posted",
+    "version": "0.1.0",
+    "orientation": "default",
+    "scheme": "posted",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.posted.portfolio"
+    },
+    "android": {
+      "package": "com.posted.portfolio",
+      "adaptiveIcon": {
+        "backgroundColor": "#101827"
+      }
+    }
+  }
+}

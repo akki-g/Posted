@@ -1,0 +1,57 @@
+[project]
+name = "posted-backend"
+version = "0.1.0"
+description = "Portfolio intelligence backend for Posted"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  # OpenBB's current EconDB provider pins the 0.20 line.
+  "aiosqlite>=0.20.0,<0.21.0",
+  "asyncpg>=0.30.0",
+  "cryptography>=45.0.0",
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.10.0",
+  "sqlalchemy[asyncio]>=2.0.41",
+  "structlog>=25.4.0",
+  "tenacity>=9.1.0",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[project.optional-dependencies]
+openbb = ["openbb>=4.4.0"]
+
+[dependency-groups]
+dev = [
+  "asgi-lifespan>=2.1.0",
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.0.0",
+  "ruff>=0.12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["app/tests"]
+markers = [
+  "user_owned: executable specifications for the nine human-written modules",
+]
+addopts = "-m 'not user_owned'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/**/*.py" = ["B008"]
+"app/portfolio/reconcile.py" = ["UP035"]
+"app/events/*.py" = ["UP035"]
