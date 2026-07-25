@@ -35,6 +35,10 @@ function PortfolioDashboard() {
   useEffect(() => setAssistantSection('investing'), []);
   const { width } = useWindowDimensions();
   const desktop = width >= 1080;
+  // The debrief sidebar needs more room than the general "desktop" breakpoint
+  // guarantees -- below this it stacks under the main content instead of
+  // squeezing both columns until they overlap.
+  const sideBySideSidebar = width >= 1680;
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -89,7 +93,7 @@ function PortfolioDashboard() {
         <ErrorState message={dashboard.error.message} retry={() => dashboard.refetch()} />
       ) : null}
       {dashboard.data ? (
-        <View style={[styles.pageGrid, !desktop && styles.stack]}>
+        <View style={[styles.pageGrid, !sideBySideSidebar && styles.stack]}>
           <View style={styles.mainColumn}>
             {dashboard.data.portfolio.demo_mode ? <DemoBanner /> : null}
 
