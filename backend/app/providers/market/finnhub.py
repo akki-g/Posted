@@ -186,7 +186,9 @@ class FinnhubMarketClient:
         *,
         limit: int = 50,
     ) -> list[InsiderTransaction]:
-        payload = await self._get("/stock/insider-transactions", {"symbol": symbol})
+        today = date.today()
+        payload = await self._get("/stock/insider-transactions", {"symbol": symbol, "from": (today - timedelta(days=30)).isoformat(),
+                        "to": today.isoformat()})
         if not isinstance(payload, dict):
             return []
         transactions: dict[str, InsiderTransaction] = {}
