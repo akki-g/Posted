@@ -3,8 +3,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
+import structlog
+
 from app.domain.enums import AssetType
 from app.domain.models import PositionObservation
+
+logger = structlog.get_logger()
 
 ASSET_TYPES = {
     "EQUITY": AssetType.EQUITY,
@@ -57,6 +61,13 @@ def map_schwab_positions(
             quantity = Decimal("0")
         quantity -= short_quantity
         asset_name = str(instrument.get("assetType") or "UNKNOWN").upper()
+        mapped_asset_type = ASSET_TYPES.get(asset_name, AssetType.UNKNOWN)
+        if mapped_asset_type is AssetType.UNKNOWN and asset_name != "UNKNOWN":
+            logger.warning(
+                "schwab_unmapped_asset_type",
+                symbol=instrument.get("symbol"),
+                raw_asset_type=asset_name,
+            )
         observations.append(
             PositionObservation(
                 account_id=account_id,
@@ -76,7 +87,7 @@ def map_schwab_positions(
                     if instrument.get("cusip")
                     else None
                 ),
-                asset_type=ASSET_TYPES.get(asset_name, AssetType.UNKNOWN),
+                asset_type=mapped_asset_type,
                 quantity=quantity,
                 market_value=_decimal(raw_position.get("marketValue")),
                 average_price=_decimal(raw_position.get("averagePrice")),
