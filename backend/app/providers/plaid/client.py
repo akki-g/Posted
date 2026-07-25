@@ -49,6 +49,7 @@ class PlaidClient:
         *,
         user_id: str,
         client_name: str,
+        products: list[str] | None = None,
         webhook_url: str | None = None,
         redirect_uri: str | None = None,
         android_package_name: str | None = None,
@@ -59,7 +60,7 @@ class PlaidClient:
             "client_name": client_name,
             "language": "en",
             "country_codes": ["US"],
-            "products": ["transactions"],
+            "products": products or ["transactions"],
             "user": {"client_user_id": user_id},
         }
         if webhook_url:
