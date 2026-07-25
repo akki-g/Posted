@@ -9,7 +9,7 @@ from app.db.base import Base
 from app.db.models import (
     BrokerageAccount,
     BrokerageConnection,
-    OAuthCredential,
+    BrokerageCredential,
     PortfolioSnapshot,
     Position,
     Security,
@@ -17,8 +17,8 @@ from app.db.models import (
     User,
 )
 from app.db.session import create_engine, create_session_factory
-from app.providers.schwab.credentials import SchwabCredentialStore
 from app.providers.schwab.oauth import OAuthTokenSet
+from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
 from app.services.schwab_sync import sync_schwab_connection
 
@@ -125,7 +125,7 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
         )
         session.add(connection)
         session.add(
-            OAuthCredential(
+            BrokerageCredential(
                 connection_id=connection_id,
                 access_token_encrypted=vault.encrypt("access-expired"),
                 refresh_token_encrypted=vault.encrypt("refresh-original"),
@@ -140,7 +140,7 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
             session,
             connection=connection,
             idempotency_key="live-sync-0001",
-            credential_store=SchwabCredentialStore(session=session, vault=vault),
+            credential_store=BrokerageCredentialStore(session=session, vault=vault),
             oauth_client=oauth,  # type: ignore[arg-type]
             trader_factory=lambda _token: FakeTraderClient(),
             as_of=NOW,
@@ -169,7 +169,7 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
         assert snapshot.total_value == Decimal("12500")
         assert snapshot.total_gain == Decimal("1550")
 
-        stored = await SchwabCredentialStore(session=session, vault=vault).load(
+        stored = await BrokerageCredentialStore(session=session, vault=vault).load(
             connection_id=connection_id
         )
         assert stored is not None
@@ -180,7 +180,7 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
             session,
             connection=connection,
             idempotency_key="live-sync-0001",
-            credential_store=SchwabCredentialStore(session=session, vault=vault),
+            credential_store=BrokerageCredentialStore(session=session, vault=vault),
             oauth_client=oauth,  # type: ignore[arg-type]
             trader_factory=lambda _token: (_ for _ in ()).throw(
                 AssertionError("provider must not be called for an idempotent replay")

@@ -19,9 +19,9 @@ from app.db.models import (
 from app.domain.enums import AssetType, PositionChangeKind
 from app.domain.models import PositionObservation, SecurityIdentity, StoredPosition
 from app.portfolio.reconcile import reconcile_positions
-from app.providers.schwab.credentials import SchwabCredentialStore
 from app.providers.schwab.mapper import map_schwab_positions
 from app.providers.schwab.oauth import OAuthTokenSet, SchwabOAuthClient
+from app.security.brokerage_credentials import BrokerageCredentialStore
 
 ZERO = Decimal("0")
 TOKEN_REFRESH_BUFFER = timedelta(minutes=2)
@@ -196,7 +196,7 @@ async def _valid_access_token(
     session: AsyncSession,
     *,
     connection_id: UUID,
-    credential_store: SchwabCredentialStore,
+    credential_store: BrokerageCredentialStore,
     oauth_client: SchwabOAuthClient,
     as_of: datetime,
 ) -> str:
@@ -205,7 +205,10 @@ async def _valid_access_token(
     await session.commit()
     if stored is None:
         raise SchwabSyncError("Reconnect Schwab before synchronizing this portfolio")
-    if _aware_utc(stored.expires_at) > as_of + TOKEN_REFRESH_BUFFER:
+    if (
+        stored.expires_at is not None
+        and _aware_utc(stored.expires_at) > as_of + TOKEN_REFRESH_BUFFER
+    ):
         return stored.access_token
     if not stored.refresh_token:
         raise SchwabSyncError("Schwab authorization expired; reconnect the account")
@@ -220,7 +223,14 @@ async def _valid_access_token(
             scope=refreshed.scope,
             obtained_at=refreshed.obtained_at,
         )
-    await credential_store.save(connection_id=connection_id, tokens=refreshed)
+    await credential_store.save(
+        connection_id=connection_id,
+        access_token=refreshed.access_token,
+        refresh_token=refreshed.refresh_token,
+        token_type=refreshed.token_type,
+        scope=refreshed.scope,
+        expires_at=refreshed.expires_at,
+    )
     await session.commit()
     return refreshed.access_token
 
@@ -515,7 +525,7 @@ async def sync_schwab_connection(
     *,
     connection: BrokerageConnection,
     idempotency_key: str,
-    credential_store: SchwabCredentialStore,
+    credential_store: BrokerageCredentialStore,
     oauth_client: SchwabOAuthClient,
     trader_factory: SchwabTraderFactory,
     as_of: datetime | None = None,

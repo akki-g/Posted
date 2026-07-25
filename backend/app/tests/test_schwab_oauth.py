@@ -4,8 +4,8 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.providers.schwab.credentials import TokenVault
 from app.providers.schwab.oauth import create_oauth_state, verify_oauth_state
+from app.security.vault import TokenVault
 
 
 def test_oauth_state_round_trip_and_expiry() -> None:

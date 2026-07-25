@@ -56,8 +56,8 @@ class BrokerageConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
-class OAuthCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "oauth_credentials"
+class BrokerageCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "brokerage_credentials"
 
     connection_id: Mapped[UUID] = mapped_column(
         ForeignKey("brokerage_connections.id", ondelete="CASCADE"), unique=True, index=True
@@ -66,7 +66,7 @@ class OAuthCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text)
     token_type: Mapped[str] = mapped_column(String(32), default="Bearer", nullable=False)
     scope: Mapped[str | None] = mapped_column(Text)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class BrokerageAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -18,12 +18,13 @@ from app.api.schemas import (
 from app.config import Settings
 from app.db.models import BrokerageConnection
 from app.providers.schwab.client import SchwabTraderClient
-from app.providers.schwab.credentials import SchwabCredentialStore, TokenVault
 from app.providers.schwab.oauth import (
     SchwabOAuthClient,
     create_oauth_state,
     verify_oauth_state,
 )
+from app.security.brokerage_credentials import BrokerageCredentialStore
+from app.security.vault import TokenVault
 from app.services.dashboard import get_connections, run_demo_sync
 from app.services.news_sync import sync_portfolio_news
 from app.services.schwab_sync import SchwabSyncError, sync_schwab_connection
@@ -121,11 +122,18 @@ async def schwab_callback(
     else:
         connection.status = "connected"
 
-    store = SchwabCredentialStore(
+    store = BrokerageCredentialStore(
         session=session,
         vault=TokenVault(settings.app_secret.get_secret_value()),
     )
-    await store.save(connection_id=connection.id, tokens=tokens)
+    await store.save(
+        connection_id=connection.id,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        scope=tokens.scope,
+        expires_at=tokens.expires_at,
+    )
     await session.commit()
     return RedirectResponse(_with_query(settings.frontend_app_url, schwab="connected"))
 
@@ -156,7 +164,7 @@ async def sync_connection(
         return result
 
     oauth_client = _schwab_client(settings)
-    credential_store = SchwabCredentialStore(
+    credential_store = BrokerageCredentialStore(
         session=session,
         vault=TokenVault(settings.app_secret.get_secret_value()),
     )
