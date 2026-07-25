@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Check,
   ChevronRight,
@@ -18,12 +18,15 @@ import { AppShell } from '@/components/AppShell';
 import { PlaidLinkButton } from '@/components/PlaidLinkButton';
 import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/AuthContext';
 import { relativeTime } from '@/lib/format';
 import type { UserPreferences } from '@/lib/types';
 import { colors } from '@/theme/tokens';
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ schwab?: string }>();
   const connections = useQuery({
     queryKey: ['connections'],
@@ -85,6 +88,28 @@ export default function SettingsScreen() {
   return (
     <AppShell title="Settings" eyebrow="CONNECTIONS AND ALERTS">
       <View style={styles.settingsGrid}>
+        <View style={styles.panel}>
+          <SectionHeader title="Account" caption="Signed-in identity for this device" />
+          <View style={styles.settingRow}>
+            <View style={styles.settingCopy}>
+              <Text style={styles.settingTitle}>
+                {user ? user.display_name : 'Using the demo account'}
+              </Text>
+              <Text style={styles.settingCaption}>
+                {user ? user.email : 'Sign in with Google to personalize your dashboard.'}
+              </Text>
+            </View>
+            {!user ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/login')}
+                style={styles.syncButton}>
+                <Text style={styles.syncButtonText}>SIGN IN</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+
         <View style={styles.panel}>
           <SectionHeader title="Banking connections" caption="Your balances and transaction history" />
           {moneyConnections.isLoading ? <LoadingState label="Loading bank connections" /> : null}
