@@ -10,7 +10,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
-posted.db
+*.db
 
 # Expo / Node
 node_modules/
