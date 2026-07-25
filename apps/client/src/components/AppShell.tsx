@@ -30,7 +30,7 @@ import { AssistantDrawer } from '@/components/AssistantDrawer';
 import { BrandMark } from '@/components/BrandMark';
 import { useAuth } from '@/lib/AuthContext';
 import type { AssistantSection } from '@/lib/assistantSection';
-import { colors, radius, spacing } from '@/theme/tokens';
+import { breakpoints, colors, radius, spacing } from '@/theme/tokens';
 
 type AppPath =
   | '/'
@@ -120,7 +120,7 @@ export function AppShell({
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
-  const desktop = width >= 920;
+  const desktop = width >= breakpoints.mobileNav;
 
   const { user, isLoading, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);

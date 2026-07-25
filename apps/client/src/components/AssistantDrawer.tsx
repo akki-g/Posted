@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 
 import { AssistantChat } from '@/components/AssistantChat';
 import type { AssistantSection } from '@/lib/assistantSection';
-import { colors, radius } from '@/theme/tokens';
+import { breakpoints, colors, radius } from '@/theme/tokens';
 
 type Props = {
   contextLabel: string;
@@ -19,151 +19,158 @@ export function AssistantDrawer({
   screenContext,
 }: Props) {
   const { width } = useWindowDimensions();
-  const desktop = width >= 920;
+  const docked = width >= breakpoints.assistantDock;
+  // Any width that shows AppShell's bottom tab bar must use the compact
+  // variant, which floats above the bar instead of covering it.
+  const compact = width < breakpoints.mobileNav;
 
   return (
-    <View style={styles.overlay}>
-      <Pressable
-        accessible={false}
-        onPress={onClose}
-        style={styles.backdrop}
-      />
-      <View
-        accessibilityViewIsModal
-        style={[styles.drawer, desktop ? styles.drawerDesktop : styles.drawerMobile]}>
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Sparkles size={18} color={colors.tealDark} />
-          </View>
-          <View style={styles.headerCopy}>
-            <View style={styles.titleRow}>
-              <Text style={styles.title}>Ask Posted</Text>
-              <View style={styles.contextBadge}>
-                <Text style={styles.contextBadgeText}>SCREEN-AWARE</Text>
-              </View>
-            </View>
-            <Text style={styles.contextLabel} numberOfLines={1}>
-              Context: {contextLabel}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close Ask Posted"
-            onPress={onClose}
-            style={styles.closeButton}>
-            <X size={18} color={colors.inkMuted} />
-          </Pressable>
+    <View
+      accessibilityLabel="Ask Posted contextual assistant"
+      style={[
+        styles.panel,
+        docked
+          ? styles.panelDocked
+          : compact
+            ? styles.panelFloatingCompact
+            : styles.panelFloating,
+      ]}>
+      <View style={styles.header}>
+        <View style={styles.headerIcon}>
+          <Sparkles size={16} color={colors.tealDark} />
         </View>
-        <AssistantChat
-          compact
-          initialSection={initialSection}
-          screenContext={screenContext}
-        />
-        <Text style={styles.disclaimer}>
-          Explanations are informational. Posted cannot place trades or guarantee outcomes.
-        </Text>
+        <View style={styles.headerCopy}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Ask Posted</Text>
+            <View style={styles.contextBadge}>
+              <View style={styles.contextDot} />
+              <Text style={styles.contextBadgeText}>IN CONTEXT</Text>
+            </View>
+          </View>
+          <Text style={styles.contextLabel} numberOfLines={1}>
+            {contextLabel}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close Ask Posted"
+          onPress={onClose}
+          style={({ pressed }) => [styles.closeButton, pressed && styles.closeButtonPressed]}>
+          <X size={17} color={colors.inkMuted} />
+        </Pressable>
       </View>
+      <AssistantChat
+        compact
+        initialSection={initialSection}
+        screenContext={screenContext}
+      />
+      <Text style={styles.disclaimer}>
+        Informational only · Posted never places trades
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 3000,
-    pointerEvents: 'box-none',
-  },
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(14, 25, 43, 0.32)',
-  },
-  drawer: {
-    position: 'absolute',
+  panel: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    shadowOffset: { width: -6, height: 0 },
-    elevation: 18,
+    zIndex: 3000,
     overflow: 'hidden',
   },
-  drawerDesktop: {
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: 420,
+  panelDocked: {
+    width: 360,
+    minHeight: '100%',
     borderLeftWidth: 1,
   },
-  drawerMobile: {
-    top: 56,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    borderTopWidth: 1,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    shadowOffset: { width: 0, height: -6 },
+  panelFloating: {
+    position: 'absolute',
+    right: 18,
+    bottom: 18,
+    width: 372,
+    height: '72%',
+    maxHeight: 640,
+    minHeight: 440,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    shadowColor: '#07101E',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 18,
+  },
+  panelFloatingCompact: {
+    position: 'absolute',
+    right: 10,
+    bottom: 76,
+    left: 10,
+    height: '58%',
+    minHeight: 360,
+    maxHeight: 590,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    shadowColor: '#07101E',
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 18,
   },
   header: {
-    minHeight: 72,
+    minHeight: 64,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
-    paddingHorizontal: 16,
+    paddingHorizontal: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: 10,
   },
   headerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.tealSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerCopy: { flex: 1, minWidth: 0 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { color: colors.ink, fontSize: 16, fontWeight: '700' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  title: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   contextBadge: {
     borderRadius: 10,
     backgroundColor: colors.tealSoft,
-    paddingHorizontal: 7,
+    paddingHorizontal: 6,
     paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
+  contextDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.positive },
   contextBadgeText: {
     color: colors.tealDark,
     fontSize: 7,
     fontWeight: '900',
-    letterSpacing: 0.7,
+    letterSpacing: 0.6,
   },
-  contextLabel: { color: colors.inkMuted, fontSize: 10, marginTop: 3 },
+  contextLabel: { color: colors.inkMuted, fontSize: 9, marginTop: 3 },
   closeButton: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderWidth: 1,
     borderColor: colors.line,
-    borderRadius: 4,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  closeButtonPressed: { backgroundColor: colors.canvas },
   disclaimer: {
     color: colors.inkFaint,
     backgroundColor: colors.canvas,
     borderTopWidth: 1,
     borderTopColor: colors.line,
-    fontSize: 9,
-    lineHeight: 13,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    fontSize: 8,
+    lineHeight: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     textAlign: 'center',
   },
 });

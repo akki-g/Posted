@@ -46,6 +46,9 @@ export default function StockDetailScreen() {
   const desktop = width >= 980;
   const showHeaderSearch = width >= 760;
   const [period, setPeriod] = useState<MarketPeriod>('1D');
+  const [chartContext, setChartContext] = useState(
+    'The price chart has not loaded yet, so no chart bar or technical-indicator formula is selected.',
+  );
   const detail = useQuery({
     queryKey: ['market-stock', symbol],
     queryFn: () => marketApi.stock(symbol),
@@ -72,7 +75,7 @@ export default function StockDetailScreen() {
 
   return (
     <AppShell
-      assistantContext={`The user is researching ${symbol}. The screen includes its current quote, price history, earnings, related news, insider transactions and sentiment, and any portfolio position. When the user says "this stock", "this position", "this chart", or asks why it is moving, they mean ${symbol}. Fetch current market and portfolio facts with the available tools before answering.`}
+      assistantContext={`The user is researching ${symbol}. The screen includes its current quote, price history, earnings, related news, insider transactions and sentiment, and any portfolio position. When the user says "this stock", "this position", "this chart", "this formula", or asks why it is moving, they mean ${symbol}. The selected chart range is ${period}. ${chartContext} Use this chart state to explain the technical indicator the user is viewing, but fetch current market and portfolio facts with the available tools before answering.`}
       assistantContextLabel={`${symbol} · Stock research`}
       eyebrow="STOCK RESEARCH"
       onRefresh={() => void refresh()}
@@ -215,7 +218,11 @@ export default function StockDetailScreen() {
                 ) : null}
                 {history.data ? (
                   <View style={styles.chartBody}>
-                    <StockPriceChart points={history.data.points} />
+                    <StockPriceChart
+                      points={history.data.points}
+                      sourceInterval={history.data.interval}
+                      onContextChange={setChartContext}
+                    />
                     <View style={styles.coverageNote}>
                       <Text style={styles.coverageText}>{history.data.coverage_note}</Text>
                       <Text style={styles.coverageText}>

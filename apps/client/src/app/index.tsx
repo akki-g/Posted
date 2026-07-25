@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
+import type { ChartPoint } from '@/lib/types';
 import { colors } from '@/theme/tokens';
 
 function timeOfDayGreeting(): string {
@@ -43,6 +44,7 @@ function PortfolioDashboard() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [privateMode, setPrivateMode] = useState(false);
+  const [portfolioInspection, setPortfolioInspection] = useState<ChartPoint | null>(null);
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
   const debrief = useQuery({ queryKey: ['morning-debrief'], queryFn: api.morningDebrief });
@@ -85,6 +87,12 @@ function PortfolioDashboard() {
 
   return (
     <AppShell
+      assistantContext={`The user is viewing their portfolio overview. The screen includes portfolio value, gains, accounts, holdings, impact events, and a 30-day performance chart. ${
+        portfolioInspection
+          ? `The currently inspected chart point is ${new Date(portfolioInspection.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} with an exact portfolio value of ${money(Number(portfolioInspection.value))}.`
+          : 'No portfolio chart point is currently available.'
+      } When the user says "this chart" or "this point", use that inspected value as the visual reference and fetch current portfolio facts with the available tools before answering.`}
+      assistantContextLabel="Portfolio overview · Live chart context"
       title="Portfolio overview"
       eyebrow={firstName ? `${timeOfDayGreeting()}, ${firstName}` : timeOfDayGreeting()}
       headerAction={headerAction}>
@@ -138,7 +146,10 @@ function PortfolioDashboard() {
                   title="Portfolio performance"
                   caption="Daily closing value · USD"
                 />
-                <PortfolioChart points={dashboard.data.history} />
+                <PortfolioChart
+                  points={dashboard.data.history}
+                  onSelectionChange={setPortfolioInspection}
+                />
               </View>
               <View style={[styles.panel, styles.accountPanel]}>
                 <SectionHeader title="Accounts" caption="Consolidated from Schwab" />

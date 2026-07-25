@@ -11,20 +11,24 @@ import {
   TrendingUp,
   UserRoundSearch,
 } from 'lucide-react-native';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
+  type PointerEvent,
 } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { MarketSearch } from '@/components/MarketSearch';
 import { DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { setAssistantSection } from '@/lib/assistantSection';
+import { barIndexForX } from '@/lib/chartInteraction';
 import { money, number, percent, relativeTime, signedMoney } from '@/lib/format';
 import { marketApi } from '@/lib/marketApi';
 import type {
@@ -41,6 +45,8 @@ export default function InsidersScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const desktop = width >= 980;
+  const [sentimentInspection, setSentimentInspection] =
+    useState<InsiderSentimentPoint | null>(null);
   const watch = useQuery({
     queryKey: ['portfolio-insiders'],
     queryFn: () => marketApi.portfolioInsiders(),
@@ -70,7 +76,11 @@ export default function InsidersScreen() {
     <AppShell
       assistantContext={
         symbol
-          ? `The user is reviewing insider activity for ${symbol}. The screen contains reported insider transactions, Finnhub monthly MSPR sentiment, price movement, portfolio exposure, recent news, and AI interpretation. When the user says "this stock", "this insider", "these trades", or "this signal", they mean ${symbol} and the analysis visible on this screen. Fetch current data with the available tools before drawing conclusions.`
+          ? `The user is reviewing insider activity for ${symbol}. The screen contains reported insider transactions, Finnhub monthly MSPR sentiment, price movement, portfolio exposure, recent news, and AI interpretation. ${
+              sentimentInspection
+                ? `The inspected sentiment bar is ${monthLabel(sentimentInspection)} ${sentimentInspection.year}: exact MSPR ${sentimentInspection.mspr.toFixed(1)} and monthly share change ${number(sentimentInspection.change, 0)}.`
+                : 'No monthly sentiment bar is currently available.'
+            } When the user says "this stock", "this insider", "these trades", "this bar", or "this signal", they mean ${symbol} and the analysis visible on this screen. Fetch current data with the available tools before drawing conclusions.`
           : 'The user is on the insider activity tracker and is choosing a portfolio holding or searching for a ticker. Help them understand insider transactions and Finnhub MSPR sentiment; fetch current data after they identify a symbol.'
       }
       assistantContextLabel={symbol ? `${symbol} · Insider activity` : 'Insider activity'}
@@ -246,7 +256,10 @@ export default function InsidersScreen() {
                   title="Monthly insider sentiment"
                   caption="Finnhub MSPR; positive values indicate net accumulation"
                 />
-                <SentimentChart points={analysis.data.sentiment} />
+                <SentimentChart
+                  points={analysis.data.sentiment}
+                  onSelectionChange={setSentimentInspection}
+                />
               </View>
 
               <View style={styles.panel}>
@@ -463,7 +476,51 @@ function SummaryMetric({
   );
 }
 
-function SentimentChart({ points }: { points: InsiderSentimentPoint[] }) {
+function SentimentChart({
+  points,
+  onSelectionChange,
+}: {
+  points: InsiderSentimentPoint[];
+  onSelectionChange?: (point: InsiderSentimentPoint | null) => void;
+}) {
+  const visible = useMemo(() => points.slice(-12), [points]);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [plotWidth, setPlotWidth] = useState(1);
+  const selectedIndex =
+    activeIndex == null
+      ? Math.max(visible.length - 1, 0)
+      : Math.min(activeIndex, visible.length - 1);
+  const selectedPoint = visible[selectedIndex];
+
+  useEffect(() => {
+    setActiveIndex(visible.length ? visible.length - 1 : null);
+  }, [visible.length]);
+
+  useEffect(() => {
+    onSelectionChange?.(selectedPoint ?? null);
+  }, [onSelectionChange, selectedPoint]);
+
+  const selectAt = useCallback(
+    (x: number) => {
+      if (!visible.length) return;
+      setActiveIndex(barIndexForX(x, plotWidth, visible.length));
+    },
+    [plotWidth, visible.length],
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onShouldBlockNativeResponder: () => false,
+        onPanResponderGrant: (event) => selectAt(event.nativeEvent.locationX),
+        onPanResponderMove: (event) => selectAt(event.nativeEvent.locationX),
+      }),
+    [selectAt],
+  );
+
   if (!points.length) {
     return (
       <View style={styles.emptyState}>
@@ -471,40 +528,95 @@ function SentimentChart({ points }: { points: InsiderSentimentPoint[] }) {
       </View>
     );
   }
-  const visible = points.slice(-12);
   return (
-    <View style={styles.chartWrap}>
-      <View style={styles.chartScale}>
-        <Text style={styles.scaleText}>+100</Text>
-        <Text style={styles.scaleText}>0</Text>
-        <Text style={styles.scaleText}>−100</Text>
+    <View style={styles.sentimentChartRoot}>
+      <View style={styles.sentimentReadout}>
+        <View>
+          <Text style={styles.sentimentReadoutDate}>
+            {monthLabel(selectedPoint)} {selectedPoint.year}
+          </Text>
+          <Text style={styles.sentimentReadoutHint}>MOVE OR DRAG ACROSS MONTHS</Text>
+        </View>
+        <View style={styles.sentimentReadoutValues}>
+          <View>
+            <Text style={styles.sentimentReadoutLabel}>EXACT MSPR</Text>
+            <Text
+              style={[
+                styles.sentimentReadoutValue,
+                selectedPoint.mspr >= 0 ? styles.positive : styles.negative,
+              ]}>
+              {selectedPoint.mspr >= 0 ? '+' : ''}
+              {selectedPoint.mspr.toFixed(1)}
+            </Text>
+          </View>
+          <View>
+            <Text style={styles.sentimentReadoutLabel}>SHARE CHANGE</Text>
+            <Text style={styles.sentimentReadoutShares}>
+              {selectedPoint.change >= 0 ? '+' : ''}
+              {number(selectedPoint.change, 0)}
+            </Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.chartPlot}>
-        <View style={[styles.guideLine, styles.guideTop]} />
-        <View style={[styles.guideLine, styles.guideMiddle]} />
-        <View style={[styles.guideLine, styles.guideBottom]} />
-        {visible.map((point) => {
-          const height = Math.max(2, Math.abs(point.mspr) * 0.58);
-          const positive = point.mspr >= 0;
-          return (
-            <View style={styles.barColumn} key={`${point.year}-${point.month}`}>
-              <View style={styles.barArea}>
-                <View
-                  style={[
-                    styles.sentimentBar,
-                    positive ? styles.positiveBar : styles.negativeBar,
-                    {
-                      height,
-                      top: positive ? 60 - height : 60,
-                    },
-                  ]}
-                />
+      <View style={styles.chartWrap}>
+        <View style={styles.chartScale}>
+          <Text style={styles.scaleText}>+100</Text>
+          <Text style={styles.scaleText}>0</Text>
+          <Text style={styles.scaleText}>−100</Text>
+        </View>
+        <View
+          onLayout={(event: LayoutChangeEvent) =>
+            setPlotWidth(Math.max(event.nativeEvent.layout.width, 1))
+          }
+          style={styles.chartPlot}>
+          <View style={[styles.guideLine, styles.guideTop]} />
+          <View style={[styles.guideLine, styles.guideMiddle]} />
+          <View style={[styles.guideLine, styles.guideBottom]} />
+          {visible.map((point, index) => {
+            const height = Math.max(2, Math.abs(point.mspr) * 0.58);
+            const positive = point.mspr >= 0;
+            return (
+              <View
+                style={[styles.barColumn, index === selectedIndex && styles.barColumnActive]}
+                key={`${point.year}-${point.month}`}>
+                <View style={styles.barArea}>
+                  <View
+                    style={[
+                      styles.sentimentBar,
+                      positive ? styles.positiveBar : styles.negativeBar,
+                      {
+                        height,
+                        top: positive ? 60 - height : 60,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.barValue}>{point.mspr.toFixed(0)}</Text>
+                <Text style={styles.barLabel}>{monthLabel(point)}</Text>
               </View>
-              <Text style={styles.barValue}>{point.mspr.toFixed(0)}</Text>
-              <Text style={styles.barLabel}>{monthLabel(point)}</Text>
-            </View>
-          );
-        })}
+            );
+          })}
+          <View
+            {...panResponder.panHandlers}
+            accessible
+            accessibilityLabel={`Interactive MSPR chart. Selected ${monthLabel(selectedPoint)} ${selectedPoint.year}, MSPR ${selectedPoint.mspr.toFixed(1)}`}
+            accessibilityRole="adjustable"
+            accessibilityValue={{ min: 0, max: visible.length - 1, now: selectedIndex }}
+            onAccessibilityAction={(event) => {
+              const delta = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+              setActiveIndex((current) =>
+                Math.max(0, Math.min((current ?? visible.length - 1) + delta, visible.length - 1)),
+              );
+            }}
+            accessibilityActions={[
+              { name: 'increment', label: 'Next month' },
+              { name: 'decrement', label: 'Previous month' },
+            ]}
+            onPointerDown={(event: PointerEvent) => selectAt(event.nativeEvent.offsetX)}
+            onPointerMove={(event: PointerEvent) => selectAt(event.nativeEvent.offsetX)}
+            style={styles.sentimentTrackingLayer}
+          />
+        </View>
       </View>
     </View>
   );
@@ -848,7 +960,45 @@ const styles = StyleSheet.create({
   aiUnavailable: { padding: 18 },
   aiUnavailableTitle: { color: colors.ink, fontSize: 12, fontWeight: '700' },
   aiUnavailableText: { color: colors.inkMuted, fontSize: 10, lineHeight: 15, marginTop: 5 },
-  chartWrap: { minHeight: 190, padding: 18, flexDirection: 'row', gap: 9 },
+  sentimentChartRoot: { paddingTop: 14 },
+  sentimentReadout: {
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  sentimentReadoutDate: { color: colors.ink, fontSize: 11, fontWeight: '700' },
+  sentimentReadoutHint: {
+    color: colors.inkFaint,
+    fontSize: 7,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginTop: 3,
+  },
+  sentimentReadoutValues: { flexDirection: 'row', gap: 22 },
+  sentimentReadoutLabel: {
+    color: colors.inkFaint,
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  sentimentReadoutValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 3,
+    fontVariant: ['tabular-nums'],
+  },
+  sentimentReadoutShares: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+    fontVariant: ['tabular-nums'],
+  },
+  chartWrap: { minHeight: 174, paddingHorizontal: 18, paddingBottom: 18, flexDirection: 'row', gap: 9 },
   chartScale: { width: 34, height: 145, justifyContent: 'space-between' },
   scaleText: { color: colors.inkFaint, fontSize: 8, fontVariant: ['tabular-nums'] },
   chartPlot: {
@@ -869,12 +1019,22 @@ const styles = StyleSheet.create({
   guideMiddle: { top: 60, backgroundColor: colors.lineStrong },
   guideBottom: { top: 120 },
   barColumn: { flex: 1, minWidth: 24, alignItems: 'center', zIndex: 2 },
+  barColumnActive: { backgroundColor: colors.tealSoft },
   barArea: { width: '100%', height: 120, position: 'relative', alignItems: 'center' },
   sentimentBar: { position: 'absolute', width: '46%', minWidth: 7, maxWidth: 18 },
   positiveBar: { backgroundColor: colors.positive },
   negativeBar: { backgroundColor: colors.negative },
   barValue: { color: colors.inkMuted, fontSize: 7, fontVariant: ['tabular-nums'] },
   barLabel: { color: colors.inkFaint, fontSize: 8, marginTop: 4 },
+  sentimentTrackingLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 4,
+    cursor: 'crosshair',
+  } as never,
   transactionRow: {
     minHeight: 76,
     paddingHorizontal: 16,

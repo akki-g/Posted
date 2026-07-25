@@ -32,6 +32,16 @@ function suggestedPrompts(section: AssistantSection, screenContext?: string): st
   if (section === 'investing') {
     const normalizedContext = screenContext?.toLowerCase() ?? '';
     if (
+      normalizedContext.includes('technical indicator') ||
+      normalizedContext.includes('active technical indicators')
+    ) {
+      return [
+        'Explain the active formula in plain English.',
+        'What does this indicator show at the selected bar?',
+        'Does price confirm or contradict this signal?',
+      ];
+    }
+    if (
       normalizedContext.includes('reviewing insider activity') ||
       normalizedContext.includes('on the insider activity tracker')
     ) {
@@ -292,8 +302,8 @@ const styles = StyleSheet.create({
   },
   introRowCompact: { paddingHorizontal: 16, paddingTop: 14 },
   intro: { color: colors.inkMuted, fontSize: 13, lineHeight: 20, maxWidth: 720 },
-  introCompact: { flex: 1, fontSize: 11, lineHeight: 17 },
-  sectionRow: { flexDirection: 'row', gap: 6, marginTop: 14, marginBottom: 4 },
+  introCompact: { flex: 1, fontSize: 10, lineHeight: 15 },
+  sectionRow: { flexDirection: 'row', gap: 6, marginTop: 12, marginBottom: 4 },
   sectionPill: {
     height: 30,
     borderWidth: 1,

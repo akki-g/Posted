@@ -42,6 +42,13 @@ export const radius = {
   pill: 999,
 } as const;
 
+export const breakpoints = {
+  /** Below this width AppShell swaps the sidebar for the bottom tab bar. */
+  mobileNav: 920,
+  /** At or above this width the assistant docks as a fixed right column. */
+  assistantDock: 1600,
+} as const;
+
 export const type = {
   micro: 10,
   caption: 12,
