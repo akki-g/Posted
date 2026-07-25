@@ -77,6 +77,22 @@ class FakeTraderClient:
                                 "description": "Vanguard Total Stock Market ETF",
                             },
                         },
+                        {
+                            # Schwab (via its inherited TD Ameritrade API) commonly reports
+                            # real ETF holdings under this asset type rather than "ETF" --
+                            # must not be silently dropped from sync.
+                            "longQuantity": "5",
+                            "shortQuantity": "0",
+                            "averagePrice": "50",
+                            "marketValue": "300",
+                            "currentDayProfitLoss": "5",
+                            "longOpenProfitLoss": "50",
+                            "instrument": {
+                                "assetType": "COLLECTIVE_INVESTMENT",
+                                "symbol": "SCHB",
+                                "description": "Schwab US Broad Market ETF",
+                            },
+                        },
                     ],
                 }
             }
@@ -132,7 +148,7 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
 
         assert result.status == "completed"
         assert result.accounts_seen == 1
-        assert result.positions_seen == 2
+        assert result.positions_seen == 3
         assert oauth.refresh_calls == 1
 
         account = await session.scalar(select(BrokerageAccount))
@@ -142,16 +158,16 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
         assert account.balance == Decimal("12500")
 
         securities = list((await session.scalars(select(Security))).all())
-        assert {security.symbol for security in securities} == {"AAPL", "VTI"}
+        assert {security.symbol for security in securities} == {"AAPL", "VTI", "SCHB"}
         positions = list((await session.scalars(select(Position))).all())
-        assert len(positions) == 2
+        assert len(positions) == 3
         assert sum((position.day_change for position in positions), Decimal("0")) == Decimal(
-            "15"
+            "20"
         )
         snapshot = await session.scalar(select(PortfolioSnapshot))
         assert snapshot is not None
         assert snapshot.total_value == Decimal("12500")
-        assert snapshot.total_gain == Decimal("1500")
+        assert snapshot.total_gain == Decimal("1550")
 
         stored = await SchwabCredentialStore(session=session, vault=vault).load(
             connection_id=connection_id

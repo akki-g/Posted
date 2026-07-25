@@ -9,7 +9,10 @@ from app.domain.models import PositionObservation
 ASSET_TYPES = {
     "EQUITY": AssetType.EQUITY,
     "ETF": AssetType.ETF,
-    "COLLECTIVE_INVESTMENT": AssetType.MUTUAL_FUND,
+    # Schwab's Trader API (inherited from TD Ameritrade) reports real ETF
+    # holdings under this type, not "ETF" -- open-end mutual funds get their
+    # own explicit "MUTUAL_FUND" type below, so this isn't ambiguous with them.
+    "COLLECTIVE_INVESTMENT": AssetType.ETF,
     "MUTUAL_FUND": AssetType.MUTUAL_FUND,
     "OPTION": AssetType.OPTION,
     "FIXED_INCOME": AssetType.FIXED_INCOME,
