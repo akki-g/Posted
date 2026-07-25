@@ -381,6 +381,10 @@ async def run_assistant_turn(
                 reply="I can't help with that request.", tool_calls_made=tool_calls_made
             )
 
+        if response.stop_reason == "pause_turn":
+            messages.append({"role": "assistant", "content": response.content})
+            continue
+
         if response.stop_reason != "tool_use":
             text = "".join(
                 block.text for block in response.content if getattr(block, "type", None) == "text"
@@ -388,6 +392,7 @@ async def run_assistant_turn(
             return AssistantTurnResult(
                 reply=text or "I don't have a response for that.",
                 tool_calls_made=tool_calls_made,
+                sources=_extract_sources(response.content),
             )
 
         messages.append({"role": "assistant", "content": response.content})

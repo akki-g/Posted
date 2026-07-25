@@ -115,3 +115,49 @@ def test_web_search_tool_is_registered_with_the_reliable_domain_allowlist() -> N
 def test_reliable_domains_has_no_duplicates() -> None:
     assert len(RELIABLE_DOMAINS) == len(set(RELIABLE_DOMAINS))
     assert all(domain and "." in domain for domain in RELIABLE_DOMAINS)
+
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.services.assistant import run_assistant_turn
+
+
+async def test_run_assistant_turn_resumes_after_pause_turn_and_returns_sources() -> None:
+    paused_response = SimpleNamespace(
+        stop_reason="pause_turn",
+        content=[
+            SimpleNamespace(type="text", text="Searching for the current rate...", citations=None),
+            SimpleNamespace(type="server_tool_use", name="web_search"),
+        ],
+    )
+    final_response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[
+            SimpleNamespace(
+                type="text",
+                text="The Fed funds rate is 5.25%-5.50%.",
+                citations=[
+                    SimpleNamespace(
+                        url="https://www.federalreserve.gov/x", title="Federal Reserve"
+                    )
+                ],
+            )
+        ],
+    )
+
+    mock_client = MagicMock()
+    mock_client.messages.create = AsyncMock(side_effect=[paused_response, final_response])
+
+    with patch("app.services.assistant.AsyncAnthropic", return_value=mock_client):
+        result = await run_assistant_turn(
+            None,  # session — not touched: this turn makes no client-executed tool calls
+            user_id=uuid4(),
+            settings=Settings(anthropic_api_key="test-key"),
+            history=[],
+            user_message="what's the fed funds rate?",
+            section="general",
+        )
+
+    assert mock_client.messages.create.call_count == 2
+    assert result.reply == "The Fed funds rate is 5.25%-5.50%."
+    assert result.sources == [{"title": "Federal Reserve", "url": "https://www.federalreserve.gov/x"}]
