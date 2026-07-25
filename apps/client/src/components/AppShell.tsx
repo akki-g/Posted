@@ -8,11 +8,12 @@ import {
   ReceiptText,
   Repeat2,
   Rss,
-  Settings,
   TrendingUp,
+  UserRoundSearch,
   WalletCards,
 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -26,7 +27,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/BrandMark';
-import { colors, spacing } from '@/theme/tokens';
+import { useAuth } from '@/lib/AuthContext';
+import { colors, radius, spacing } from '@/theme/tokens';
 
 type AppPath =
   | '/'
@@ -37,6 +39,7 @@ type AppPath =
   | '/subscriptions'
   | '/invest'
   | '/news'
+  | '/insiders'
   | '/assistant'
   | '/settings';
 
@@ -51,6 +54,7 @@ const portfolioNav: NavItem[] = [
   { label: 'Impact feed', href: '/feed', icon: Newspaper },
   { label: 'News', href: '/news', icon: Rss },
   { label: 'Holdings', href: '/holdings', icon: WalletCards },
+  { label: 'Insider activity', href: '/insiders', icon: UserRoundSearch },
 ];
 
 const moneyNav: NavItem[] = [
@@ -69,7 +73,6 @@ const mobileNav: NavItem[] = [
   { label: 'Invest', href: '/invest', icon: TrendingUp },
   { label: 'Recurring', href: '/subscriptions', icon: Repeat2 },
   { label: 'Assistant', href: '/assistant', icon: MessageSquare },
-  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 type Props = {
@@ -95,6 +98,18 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
   const desktop = width >= 920;
+
+  const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const initials = user
+    ? user.display_name
+        .split(' ')
+        .map((part) => part[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : 'PU';
 
   const content = (
     <View style={[styles.content, desktop ? styles.contentDesktop : styles.contentMobile]}>
@@ -172,10 +187,60 @@ export function AppShell({
               <Bell size={18} color={colors.ink} strokeWidth={1.8} />
               <View style={styles.notificationDot} />
             </Pressable>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>AM</Text>
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Account menu"
+              onPress={() => setMenuOpen((open) => !open)}
+              style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </Pressable>
           </View>
+
+          {menuOpen ? (
+            <>
+              <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)} />
+              <View style={styles.userMenu}>
+                <View style={styles.userMenuHeader}>
+                  <Text style={styles.userMenuName} numberOfLines={1}>
+                    {user ? user.display_name : 'Not signed in'}
+                  </Text>
+                  {user ? (
+                    <Text style={styles.userMenuEmail} numberOfLines={1}>
+                      {user.email}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  style={styles.userMenuItem}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    router.push('/settings');
+                  }}>
+                  <Text style={styles.userMenuItemText}>Settings</Text>
+                </Pressable>
+                {user ? (
+                  <Pressable
+                    style={styles.userMenuItem}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      signOut();
+                      router.replace('/');
+                    }}>
+                    <Text style={styles.userMenuItemText}>Sign out</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    style={styles.userMenuItem}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      router.push('/login');
+                    }}>
+                    <Text style={styles.userMenuItemText}>Sign in with Google</Text>
+                  </Pressable>
+                )}
+              </View>
+            </>
+          ) : null}
 
           {scroll ? (
             <ScrollView
@@ -312,6 +377,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { color: colors.tealDark, fontSize: 11, fontWeight: '800' },
+  menuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+  },
+  userMenu: {
+    position: 'absolute',
+    top: 64 + 8,
+    right: 20,
+    width: 220,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    paddingVertical: 6,
+    zIndex: 11,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  userMenuHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  userMenuName: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  userMenuEmail: { color: colors.inkMuted, fontSize: 11, marginTop: 2 },
+  userMenuItem: { paddingHorizontal: 14, height: 40, justifyContent: 'center' },
+  userMenuItemText: { color: colors.ink, fontSize: 13, fontWeight: '500' },
   scroll: { flex: 1 },
   scrollContent: { flexGrow: 1 },
   content: { width: '100%', maxWidth: 1440, alignSelf: 'center' },
