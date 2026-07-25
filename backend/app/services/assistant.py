@@ -7,7 +7,7 @@ one bad lookup can't crash the whole turn.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -150,6 +150,22 @@ def _decimal_default(value: Any) -> Any:
     return str(value)
 
 
+def _extract_sources(content_blocks: list[Any]) -> list[dict[str, str]]:
+    seen_urls: set[str] = set()
+    sources: list[dict[str, str]] = []
+    for block in content_blocks:
+        if getattr(block, "type", None) != "text":
+            continue
+        for citation in getattr(block, "citations", None) or []:
+            url = getattr(citation, "url", None)
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            title = getattr(citation, "title", None)
+            sources.append({"title": title or url, "url": url})
+    return sources
+
+
 async def _execute_tool(
     name: str,
     tool_input: dict[str, Any],
@@ -286,6 +302,7 @@ async def _execute_tool(
 class AssistantTurnResult:
     reply: str
     tool_calls_made: int
+    sources: list[dict[str, str]] = field(default_factory=list)
 
 
 async def run_assistant_turn(
