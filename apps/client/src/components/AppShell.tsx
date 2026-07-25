@@ -3,18 +3,19 @@ import {
   Bell,
   Landmark,
   LayoutDashboard,
-  MessageSquare,
   Newspaper,
   ReceiptText,
   Repeat2,
   Rss,
+  Sparkles,
   TrendingUp,
   UserRoundSearch,
   WalletCards,
 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   RefreshControl,
@@ -26,8 +27,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AssistantDrawer } from '@/components/AssistantDrawer';
 import { BrandMark } from '@/components/BrandMark';
 import { useAuth } from '@/lib/AuthContext';
+import type { AssistantSection } from '@/lib/assistantSection';
 import { colors, radius, spacing } from '@/theme/tokens';
 
 type AppPath =
@@ -63,16 +66,11 @@ const moneyNav: NavItem[] = [
   { label: 'Subscriptions', href: '/subscriptions', icon: Repeat2 },
 ];
 
-const assistantNav: NavItem[] = [
-  { label: 'Assistant', href: '/assistant', icon: MessageSquare },
-];
-
 const mobileNav: NavItem[] = [
   { label: 'Home', href: '/money', icon: Landmark },
   { label: 'Activity', href: '/transactions', icon: ReceiptText },
   { label: 'Invest', href: '/invest', icon: TrendingUp },
   { label: 'Recurring', href: '/subscriptions', icon: Repeat2 },
-  { label: 'Assistant', href: '/assistant', icon: MessageSquare },
 ];
 
 type Props = {
@@ -83,7 +81,31 @@ type Props = {
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
+  assistantContext?: string;
+  assistantContextLabel?: string;
 };
+
+function assistantSectionForPath(pathname: string): AssistantSection {
+  if (
+    pathname.startsWith('/money') ||
+    pathname.startsWith('/transactions') ||
+    pathname.startsWith('/subscriptions')
+  ) {
+    return 'money';
+  }
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/feed') ||
+    pathname.startsWith('/holdings') ||
+    pathname.startsWith('/invest') ||
+    pathname.startsWith('/news') ||
+    pathname.startsWith('/insiders') ||
+    pathname.startsWith('/stock')
+  ) {
+    return 'investing';
+  }
+  return 'general';
+}
 
 export function AppShell({
   title,
@@ -93,14 +115,29 @@ export function AppShell({
   scroll = true,
   refreshing = false,
   onRefresh,
+  assistantContext,
+  assistantContextLabel,
 }: Props) {
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
   const desktop = width >= 920;
 
-  const { user, signOut } = useAuth();
+  const { user, isLoading, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [isLoading, user, router]);
+  const assistantSection = assistantSectionForPath(pathname);
+  const resolvedAssistantContext =
+    assistantContext ??
+    `The user is viewing the "${title}" screen at ${pathname}. ${
+      eyebrow ? `The screen is grouped under "${eyebrow}". ` : ''
+    }Use this page identity only to resolve references such as "this page" or "what I am looking at"; fetch current financial facts with the available tools.`;
 
   const initials = user
     ? user.display_name
@@ -124,6 +161,16 @@ export function AppShell({
     </View>
   );
 
+  if (isLoading || !user) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <View style={styles.authGate}>
+          <ActivityIndicator color={colors.teal} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.root}>
@@ -135,7 +182,6 @@ export function AppShell({
             {[
               { label: 'MONEY', items: moneyNav },
               { label: 'INVESTING', items: portfolioNav },
-              { label: 'AI', items: assistantNav },
             ].map((group) => (
               <View key={group.label} style={styles.navGroup}>
                 <Text style={styles.navLabel}>{group.label}</Text>
@@ -183,6 +229,34 @@ export function AppShell({
           <View style={styles.topbar}>
             {!desktop ? <BrandMark compact /> : null}
             <View style={styles.topbarSpacer} />
+            {pathname !== '/assistant' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={assistantOpen ? 'Close Ask Posted' : 'Open Ask Posted'}
+                accessibilityState={{ expanded: assistantOpen }}
+                onPress={() => {
+                  setMenuOpen(false);
+                  setAssistantOpen((open) => !open);
+                }}
+                style={({ pressed }) => [
+                  styles.assistantButton,
+                  assistantOpen && styles.assistantButtonActive,
+                  pressed && styles.assistantButtonPressed,
+                ]}>
+                <Sparkles
+                  size={16}
+                  color={assistantOpen ? colors.white : colors.tealDark}
+                  strokeWidth={2}
+                />
+                <Text
+                  style={[
+                    styles.assistantButtonText,
+                    assistantOpen && styles.assistantButtonTextActive,
+                  ]}>
+                  {desktop ? 'Ask Posted' : 'Ask'}
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable accessibilityLabel="Notifications" style={styles.iconButton}>
               <Bell size={18} color={colors.ink} strokeWidth={1.8} />
               <View style={styles.notificationDot} />
@@ -288,6 +362,15 @@ export function AppShell({
             </View>
           ) : null}
         </View>
+
+        {assistantOpen ? (
+          <AssistantDrawer
+            contextLabel={assistantContextLabel ?? title}
+            initialSection={assistantSection}
+            onClose={() => setAssistantOpen(false)}
+            screenContext={resolvedAssistantContext}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -295,6 +378,7 @@ export function AppShell({
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.navy },
+  authGate: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas },
   root: { flex: 1, flexDirection: 'row', backgroundColor: colors.canvas },
   sidebar: { width: 224, backgroundColor: colors.navy, minHeight: '100%' },
   brandArea: {
@@ -349,6 +433,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   topbarSpacer: { flex: 1 },
+  assistantButton: {
+    height: 38,
+    borderWidth: 1,
+    borderColor: colors.teal,
+    borderRadius: 4,
+    backgroundColor: colors.tealSoft,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginRight: 10,
+  },
+  assistantButtonActive: { backgroundColor: colors.teal, borderColor: colors.teal },
+  assistantButtonPressed: { opacity: 0.82 },
+  assistantButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '800' },
+  assistantButtonTextActive: { color: colors.white },
   iconButton: {
     width: 38,
     height: 38,
@@ -414,10 +515,17 @@ const styles = StyleSheet.create({
   userMenuItemText: { color: colors.ink, fontSize: 13, fontWeight: '500' },
   scroll: { flex: 1 },
   scrollContent: { flexGrow: 1 },
-  content: { width: '100%', maxWidth: 1440, alignSelf: 'center' },
+  content: {
+    width: '100%',
+    maxWidth: 1440,
+    alignSelf: 'center',
+    overflow: 'visible',
+  },
   contentDesktop: { paddingHorizontal: 32, paddingTop: 30, paddingBottom: 48 },
   contentMobile: { paddingHorizontal: 16, paddingTop: 22, paddingBottom: 102 },
   pageHeader: {
+    position: 'relative',
+    zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
