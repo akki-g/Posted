@@ -1,6 +1,5 @@
 import { usePathname, useRouter } from 'expo-router';
 import {
-  Bell,
   Landmark,
   LayoutDashboard,
   Newspaper,
@@ -257,10 +256,6 @@ export function AppShell({
                 </Text>
               </Pressable>
             ) : null}
-            <Pressable accessibilityLabel="Notifications" style={styles.iconButton}>
-              <Bell size={18} color={colors.ink} strokeWidth={1.8} />
-              <View style={styles.notificationDot} />
-            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Account menu"
@@ -450,25 +445,6 @@ const styles = StyleSheet.create({
   assistantButtonPressed: { opacity: 0.82 },
   assistantButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '800' },
   assistantButtonTextActive: { color: colors.white },
-  iconButton: {
-    width: 38,
-    height: 38,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  notificationDot: {
-    position: 'absolute',
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.negative,
-    right: 8,
-    top: 7,
-  },
   avatar: {
     width: 34,
     height: 34,

@@ -5,14 +5,23 @@ import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
+import { DebriefPanel } from '@/components/DebriefPanel';
 import { EventList } from '@/components/EventList';
 import { HoldingsList } from '@/components/HoldingsList';
 import { PortfolioChart } from '@/components/PortfolioChart';
 import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/AuthContext';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
 import { colors } from '@/theme/tokens';
+
+function timeOfDayGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'GOOD MORNING';
+  if (hour < 18) return 'GOOD AFTERNOON';
+  return 'GOOD EVENING';
+}
 
 export default function DashboardScreen() {
   if (Platform.OS !== 'web') {
@@ -28,10 +37,13 @@ function PortfolioDashboard() {
   const desktop = width >= 1080;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [privateMode, setPrivateMode] = useState(false);
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
   const debrief = useQuery({ queryKey: ['morning-debrief'], queryFn: api.morningDebrief });
+  const moneyOverview = useQuery({ queryKey: ['money-overview'], queryFn: api.moneyOverview });
+  const firstName = user?.display_name.split(' ')[0]?.toUpperCase() ?? '';
   const sync = useMutation({
     mutationFn: async () => {
       const connection = connections.data?.[0];
@@ -68,120 +80,129 @@ function PortfolioDashboard() {
   );
 
   return (
-    <AppShell title="Portfolio overview" eyebrow="GOOD MORNING, ALEX" headerAction={headerAction}>
+    <AppShell
+      title="Portfolio overview"
+      eyebrow={firstName ? `${timeOfDayGreeting()}, ${firstName}` : timeOfDayGreeting()}
+      headerAction={headerAction}>
       {dashboard.isLoading ? <LoadingState /> : null}
       {dashboard.isError ? (
         <ErrorState message={dashboard.error.message} retry={() => dashboard.refetch()} />
       ) : null}
       {dashboard.data ? (
-        <>
-          {dashboard.data.portfolio.demo_mode ? <DemoBanner /> : null}
+        <View style={[styles.pageGrid, !desktop && styles.stack]}>
+          <View style={styles.mainColumn}>
+            {dashboard.data.portfolio.demo_mode ? <DemoBanner /> : null}
 
-          {debrief.data?.available && debrief.data.summary ? (
-            <View style={styles.debriefCard}>
-              <Text style={styles.debriefKicker}>MORNING DEBRIEF · AI</Text>
-              <Text style={styles.debriefText}>{debrief.data.summary}</Text>
-            </View>
-          ) : null}
-
-          <View style={[styles.metrics, !desktop && styles.metricsWrapped]}>
-            <View style={[styles.metricCard, styles.primaryMetric]}>
-              <Text style={styles.metricLabel}>TOTAL PORTFOLIO VALUE</Text>
-              <Text style={styles.portfolioValue}>
-                {privateMode ? '$••••••' : money(dashboard.data.portfolio.total_value)}
-              </Text>
-              <Text style={styles.metricCaption}>
-                Across {dashboard.data.accounts.length} Schwab accounts
-              </Text>
-            </View>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>TODAY</Text>
-              <Text style={styles.positiveValue}>
-                {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.day_change.amount)}
-              </Text>
-              <Text style={styles.positiveCaption}>
-                {percent(dashboard.data.portfolio.day_change.percent)}
-              </Text>
-            </View>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>TOTAL RETURN</Text>
-              <Text style={styles.metricValue}>
-                {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.total_gain.amount)}
-              </Text>
-              <Text style={styles.metricCaption}>
-                {percent(dashboard.data.portfolio.total_gain.percent)} all time
-              </Text>
-            </View>
-            <View style={styles.metricCard}>
-              <Text style={styles.metricLabel}>ATTENTION NEEDED</Text>
-              <Text style={styles.metricValue}>{dashboard.data.unread_event_count}</Text>
-              <Text style={styles.metricCaption}>Unread material updates</Text>
-            </View>
-          </View>
-
-          <View style={[styles.twoColumn, !desktop && styles.stack]}>
-            <View style={[styles.panel, styles.chartPanel]}>
-              <SectionHeader
-                title="Portfolio performance"
-                caption="Daily closing value · USD"
-              />
-              <PortfolioChart points={dashboard.data.history} />
-            </View>
-            <View style={[styles.panel, styles.accountPanel]}>
-              <SectionHeader title="Accounts" caption="Consolidated from Schwab" />
-              {dashboard.data.accounts.map((account) => (
-                <View key={account.id} style={styles.accountRow}>
-                  <View style={styles.accountMark} />
-                  <View style={styles.accountIdentity}>
-                    <Text style={styles.accountName}>{account.name}</Text>
-                    <Text style={styles.accountType}>{account.account_type}</Text>
-                  </View>
-                  <View style={styles.accountValueBlock}>
-                    <Text style={styles.accountValue}>
-                      {privateMode ? '$••••' : money(account.balance)}
-                    </Text>
-                    <Text style={styles.accountChange}>{signedMoney(account.day_change)}</Text>
-                  </View>
-                </View>
-              ))}
-              <View style={styles.syncMeta}>
-                <View style={styles.liveDot} />
-                <Text style={styles.syncMetaText}>
-                  Last synced {dashboard.data.portfolio.last_synced_at ? relativeTime(dashboard.data.portfolio.last_synced_at) : 'never'}
+            <View style={[styles.metrics, !desktop && styles.metricsWrapped]}>
+              <View style={[styles.metricCard, styles.primaryMetric]}>
+                <Text style={styles.metricLabel}>TOTAL PORTFOLIO VALUE</Text>
+                <Text style={styles.portfolioValue}>
+                  {privateMode ? '$••••••' : money(dashboard.data.portfolio.total_value)}
                 </Text>
+                <Text style={styles.metricCaption}>
+                  Across {dashboard.data.accounts.length} Schwab accounts
+                </Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>TODAY</Text>
+                <Text style={styles.positiveValue}>
+                  {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.day_change.amount)}
+                </Text>
+                <Text style={styles.positiveCaption}>
+                  {percent(dashboard.data.portfolio.day_change.percent)}
+                </Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>TOTAL RETURN</Text>
+                <Text style={styles.metricValue}>
+                  {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.total_gain.amount)}
+                </Text>
+                <Text style={styles.metricCaption}>
+                  {percent(dashboard.data.portfolio.total_gain.percent)} all time
+                </Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricLabel}>ATTENTION NEEDED</Text>
+                <Text style={styles.metricValue}>{dashboard.data.unread_event_count}</Text>
+                <Text style={styles.metricCaption}>Unread material updates</Text>
+              </View>
+            </View>
+
+            <View style={[styles.twoColumn, !desktop && styles.stack]}>
+              <View style={[styles.panel, styles.chartPanel]}>
+                <SectionHeader
+                  title="Portfolio performance"
+                  caption="Daily closing value · USD"
+                />
+                <PortfolioChart points={dashboard.data.history} />
+              </View>
+              <View style={[styles.panel, styles.accountPanel]}>
+                <SectionHeader title="Accounts" caption="Consolidated from Schwab" />
+                {dashboard.data.accounts.map((account) => (
+                  <View key={account.id} style={styles.accountRow}>
+                    <View style={styles.accountMark} />
+                    <View style={styles.accountIdentity}>
+                      <Text style={styles.accountName}>{account.name}</Text>
+                      <Text style={styles.accountType}>{account.account_type}</Text>
+                    </View>
+                    <View style={styles.accountValueBlock}>
+                      <Text style={styles.accountValue}>
+                        {privateMode ? '$••••' : money(account.balance)}
+                      </Text>
+                      <Text style={styles.accountChange}>{signedMoney(account.day_change)}</Text>
+                    </View>
+                  </View>
+                ))}
+                <View style={styles.syncMeta}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.syncMetaText}>
+                    Last synced {dashboard.data.portfolio.last_synced_at ? relativeTime(dashboard.data.portfolio.last_synced_at) : 'never'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.twoColumn, !desktop && styles.stack]}>
+              <View style={[styles.panel, styles.holdingsPanel]}>
+                <SectionHeader
+                  title="Largest holdings"
+                  caption="Sorted by market value"
+                  action={
+                    <Pressable onPress={() => router.push('/holdings')} style={styles.textAction}>
+                      <Text style={styles.textActionLabel}>All holdings</Text>
+                      <ArrowRight size={14} color={colors.tealDark} />
+                    </Pressable>
+                  }
+                />
+                <HoldingsList holdings={dashboard.data.top_holdings} limit={5} compact />
+              </View>
+              <View style={[styles.panel, styles.feedPanel]}>
+                <SectionHeader
+                  title="Impact feed"
+                  caption="Ranked for your portfolio"
+                  action={
+                    <Pressable onPress={() => router.push('/feed')} style={styles.textAction}>
+                      <Text style={styles.textActionLabel}>Open feed</Text>
+                      <ArrowRight size={14} color={colors.tealDark} />
+                    </Pressable>
+                  }
+                />
+                <EventList events={dashboard.data.important_events.slice(0, 3)} />
               </View>
             </View>
           </View>
 
-          <View style={[styles.twoColumn, !desktop && styles.stack]}>
-            <View style={[styles.panel, styles.holdingsPanel]}>
-              <SectionHeader
-                title="Largest holdings"
-                caption="Sorted by market value"
-                action={
-                  <Pressable onPress={() => router.push('/holdings')} style={styles.textAction}>
-                    <Text style={styles.textActionLabel}>All holdings</Text>
-                    <ArrowRight size={14} color={colors.tealDark} />
-                  </Pressable>
-                }
-              />
-              <HoldingsList holdings={dashboard.data.top_holdings} limit={5} compact />
-            </View>
-            <View style={[styles.panel, styles.feedPanel]}>
-              <SectionHeader
-                title="Impact feed"
-                caption="Ranked for your portfolio"
-                action={
-                  <Pressable onPress={() => router.push('/feed')} style={styles.textAction}>
-                    <Text style={styles.textActionLabel}>Open feed</Text>
-                    <ArrowRight size={14} color={colors.tealDark} />
-                  </Pressable>
-                }
-              />
-              <EventList events={dashboard.data.important_events.slice(0, 3)} />
-            </View>
+          <View style={styles.sidebarColumn}>
+            <DebriefPanel
+              debrief={debrief.data}
+              debriefLoading={debrief.isLoading}
+              holdings={dashboard.data.top_holdings}
+              money={moneyOverview.data}
+              moneyLoading={moneyOverview.isLoading}
+              privateMode={privateMode}
+            />
           </View>
-        </>
+        </View>
       ) : null}
     </AppShell>
   );
@@ -199,15 +220,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 4,
   },
-  debriefCard: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.tealSoft,
-    padding: 16,
-    marginBottom: 16,
-  },
-  debriefKicker: { color: colors.tealDark, fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
-  debriefText: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 8 },
+  pageGrid: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  mainColumn: { flex: 1.7, minWidth: 0 },
+  sidebarColumn: { flex: 1, minWidth: 300 },
   metrics: { flexDirection: 'row', marginBottom: 16, gap: 1, backgroundColor: colors.line },
   metricsWrapped: { flexWrap: 'wrap', gap: 1 },
   metricCard: {

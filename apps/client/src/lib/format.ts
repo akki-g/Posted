@@ -22,6 +22,19 @@ export function signedMoney(value: string | number): string {
   return `${amount >= 0 ? '+' : '-'}${money(Math.abs(amount))}`;
 }
 
+export function daysUntil(dateString: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(dateString);
+  target.setHours(0, 0, 0, 0);
+  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return 'Overdue';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days < 14) return `In ${days} days`;
+  return `In ${Math.round(days / 7)} weeks`;
+}
+
 export function relativeTime(timestamp: string): string {
   const elapsed = Date.now() - new Date(timestamp).getTime();
   const minutes = Math.max(0, Math.floor(elapsed / 60_000));
