@@ -1,0 +1,101 @@
+# Production deployment. Local dev uses docker-compose.yml instead (Postgres +
+# backend only, no frontend container, DEMO_MODE=true).
+#
+# Prerequisites on the EC2 host, then run with --env-file so ${VAR} substitution
+# in this file (POSTGRES_PASSWORD, APP_SECRET) picks up .env.production instead
+# of silently falling through to the project directory's plain .env:
+#   1. `docker network create portfolio-edge` (once, shared with the other apps
+#      behind the same reverse proxy) -- skip this if it already exists.
+#   2. A `.env.production` file at the repo root (copy `.env.production.example`
+#      and fill in real values -- never commit it).
+#   3. One nginx server block added in the personal-portfolio repo's edge proxy
+#      config routing your Posted domain to `posted-web:8080` -- not this repo.
+#
+#   docker compose -f compose.production.yml --env-file .env.production up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: posted
+      POSTGRES_USER: posted
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U posted -d posted"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - posted_postgres_data:/var/lib/postgresql/data
+    networks:
+      - app
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env.production}
+      DATABASE_URL: postgresql+asyncpg://posted:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}@postgres:5432/posted
+      DEMO_MODE: "false"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - app
+
+  web:
+    build:
+      context: ./apps/client
+      args:
+        EXPO_PUBLIC_API_URL: /api/v1
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      app:
+      portfolio_edge:
+        aliases: [posted-web]
+
+networks:
+  app:
+  portfolio_edge:
+    name: portfolio-edge
+    external: true
+
+volumes:
+  posted_postgres_data:
