@@ -28,19 +28,21 @@ export function ParamPopover({ params, paramSpecs, onApply, onClose }: Props) {
   };
 
   return (
-    <View style={styles.popover}>
-      {paramSpecs.map((spec) => (
-        <View key={spec.key} style={styles.row}>
-          <Text style={styles.label}>{spec.label}</Text>
-          <TextInput
-            accessibilityLabel={spec.label}
-            keyboardType="numeric"
-            onChangeText={(text) => setDraft((current) => ({ ...current, [spec.key]: text }))}
-            style={styles.input}
-            value={draft[spec.key]}
-          />
-        </View>
-      ))}
+    <View style={styles.panel}>
+      <View style={styles.fields}>
+        {paramSpecs.map((spec) => (
+          <View key={spec.key} style={styles.field}>
+            <Text style={styles.label}>{spec.label}</Text>
+            <TextInput
+              accessibilityLabel={spec.label}
+              keyboardType="numeric"
+              onChangeText={(text) => setDraft((current) => ({ ...current, [spec.key]: text }))}
+              style={styles.input}
+              value={draft[spec.key]}
+            />
+          </View>
+        ))}
+      </View>
       <View style={styles.actions}>
         <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}>
           <Text style={styles.buttonText}>Cancel</Text>
@@ -54,28 +56,23 @@ export function ParamPopover({ params, paramSpecs, onApply, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  popover: {
-    position: 'absolute',
-    top: 26,
-    right: 0,
-    zIndex: 20,
-    width: 200,
+  panel: {
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    padding: 10,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    backgroundColor: colors.surfaceMuted,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 14,
   },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  fields: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, flexGrow: 1 },
+  field: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   label: { color: colors.inkMuted, fontSize: 10, fontWeight: '600' },
   input: {
-    width: 64,
+    width: 60,
     height: 28,
     borderWidth: 1,
     borderColor: colors.line,
@@ -84,8 +81,9 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 11,
     textAlign: 'right',
+    backgroundColor: colors.surface,
   },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: 6 },
   button: {
     height: 28,
     paddingHorizontal: 10,

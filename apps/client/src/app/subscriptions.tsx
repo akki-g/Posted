@@ -9,7 +9,7 @@ import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money } from '@/lib/format';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function SubscriptionsScreen() {
   useEffect(() => setAssistantSection('money'), []);
@@ -55,7 +55,7 @@ export default function SubscriptionsScreen() {
       )}
 
       <View style={[styles.layout, !desktop && styles.stack]}>
-        <View style={[styles.panel, styles.listPanel, mobile && styles.mobilePanel]}>
+        <View style={[styles.panel, styles.listPanel]}>
           <SectionHeader title="Detected recurring activity" caption="Review before treating a charge as a subscription" />
           {query.isLoading ? <LoadingState label="Detecting recurring charges" /> : null}
           {query.isError ? <ErrorState message={query.error.message} retry={() => query.refetch()} /> : null}
@@ -63,7 +63,7 @@ export default function SubscriptionsScreen() {
         </View>
 
         <View style={styles.insightsColumn}>
-          <View style={[styles.panel, mobile && styles.mobilePanel]}>
+          <View style={styles.panel}>
             <SectionHeader title="How detection works" caption="Evidence, not a provider label" />
             <Insight icon={<CalendarClock size={17} color={colors.tealDark} />} title="Timing cadence" caption="Looks for consistent gaps such as monthly or annual billing." />
             <Insight icon={<CircleDollarSign size={17} color={colors.tealDark} />} title="Amount stability" caption="Allows small changes without grouping unrelated purchases." />
@@ -124,8 +124,14 @@ const styles = StyleSheet.create({
   summaryCaption: { color: colors.inkMuted, fontSize: 10, marginTop: 5 },
   layout: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   stack: { flexDirection: 'column' },
-  panel: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-  mobilePanel: { borderRadius: 12, overflow: 'hidden' },
+  panel: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   listPanel: { flex: 1.45, width: '100%' },
   insightsColumn: { flex: 1, width: '100%', gap: 16 },
   insightRow: { minHeight: 84, padding: 16, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 12 },

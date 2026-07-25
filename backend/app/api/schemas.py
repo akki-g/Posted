@@ -165,6 +165,20 @@ class AuthUser(APIModel):
     display_name: str
 
 
+class SmsLinkRequest(APIModel):
+    phone_number: str = Field(min_length=8, max_length=20)
+
+
+class SmsVerifyRequest(APIModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class SmsLinkStatus(APIModel):
+    status: str
+    phone_number_masked: str | None = None
+    opted_out: bool = False
+
+
 class SyncRequest(APIModel):
     idempotency_key: str = Field(min_length=8, max_length=160)
 

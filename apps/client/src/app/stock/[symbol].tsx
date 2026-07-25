@@ -33,7 +33,7 @@ import type {
   MarketProviderStatus,
   MarketQuote,
 } from '@/lib/marketTypes';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 const PERIODS: MarketPeriod[] = ['1D', '5D', '1M', '6M', '1Y', '5Y'];
 
@@ -761,6 +761,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
   },
   chartBody: { padding: 14 },
   chartPanelSection: { marginBottom: 16 },

@@ -6,22 +6,24 @@ import {
   Database,
   Landmark,
   LockKeyhole,
+  MessageSquare,
   RefreshCw,
   Smartphone,
   SunMedium,
   WalletCards,
 } from 'lucide-react-native';
-import { useEffect } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
+import { PlaidInvestmentLinkButton } from '@/components/PlaidInvestmentLinkButton';
 import { PlaidLinkButton } from '@/components/PlaidLinkButton';
 import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { relativeTime } from '@/lib/format';
 import type { UserPreferences } from '@/lib/types';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
@@ -41,6 +43,10 @@ export default function SettingsScreen() {
     queryFn: api.moneyConnections,
   });
   const plaidStatus = useQuery({ queryKey: ['plaid-status'], queryFn: api.plaidStatus });
+  const plaidInvestmentsStatus = useQuery({
+    queryKey: ['plaid-investments-status'],
+    queryFn: api.plaidInvestmentsStatus,
+  });
   const preferences = useQuery({ queryKey: ['preferences'], queryFn: api.preferences });
   const updatePreferences = useMutation({
     mutationFn: api.updatePreferences,
@@ -69,6 +75,31 @@ export default function SettingsScreen() {
         queryClient.invalidateQueries({ queryKey: ['money-transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
       ]);
+    },
+  });
+
+  const smsLinkStatus = useQuery({ queryKey: ['sms-link-status'], queryFn: api.smsLinkStatus });
+  const [phoneInput, setPhoneInput] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const requestSmsLink = useMutation({
+    mutationFn: () => api.requestSmsLink(phoneInput),
+    onSuccess: async () => {
+      setCodeInput('');
+      await queryClient.invalidateQueries({ queryKey: ['sms-link-status'] });
+    },
+  });
+  const verifySmsLink = useMutation({
+    mutationFn: () => api.verifySmsLink(codeInput),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(['sms-link-status'], updated);
+      setPhoneInput('');
+      setCodeInput('');
+    },
+  });
+  const unlinkSmsLink = useMutation({
+    mutationFn: api.unlinkSmsLink,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sms-link-status'] });
     },
   });
 
@@ -174,7 +205,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.panel}>
-          <SectionHeader title="Investing connections" caption="Read-only Schwab portfolio access" />
+          <SectionHeader title="Investing connections" caption="Read-only brokerage access" />
           {connections.isLoading ? <LoadingState label="Loading brokerage connections" /> : null}
           {connections.isError ? (
             <ErrorState message={connections.error.message} retry={() => connections.refetch()} />
@@ -182,7 +213,9 @@ export default function SettingsScreen() {
           {connections.data?.map((connection) => (
             <View key={connection.id} style={styles.connectionRow}>
               <View style={styles.providerMark}>
-                <Text style={styles.providerMarkText}>S</Text>
+                <Text style={styles.providerMarkText}>
+                  {connection.provider === 'plaid_investments' ? 'P' : 'S'}
+                </Text>
               </View>
               <View style={styles.connectionCopy}>
                 <Text style={styles.connectionName}>{connection.display_name}</Text>
@@ -269,6 +302,125 @@ export default function SettingsScreen() {
           {syncInvesting.isError ? (
             <Text style={styles.connectionError}>{syncInvesting.error.message}</Text>
           ) : null}
+          <PlaidInvestmentLinkButton disabled={!plaidInvestmentsStatus.data?.configured} />
+        </View>
+
+        <View style={styles.panel}>
+          <SectionHeader title="Text Messaging" caption="Ask Posted questions over SMS" />
+          <View style={styles.settingRow}>
+            <View style={styles.settingIcon}>
+              <MessageSquare size={17} color={colors.inkMuted} />
+            </View>
+            <View style={styles.settingCopy}>
+              {smsLinkStatus.data?.status === 'verified' ? (
+                <>
+                  <Text style={styles.settingTitle}>{smsLinkStatus.data.phone_number_masked}</Text>
+                  <Text style={styles.settingCaption}>
+                    {smsLinkStatus.data.opted_out
+                      ? 'Opted out — text START to resume'
+                      : 'Verified — text Posted anytime'}
+                  </Text>
+                </>
+              ) : smsLinkStatus.data?.status === 'pending' ? (
+                <>
+                  <Text style={styles.settingTitle}>
+                    Code sent to {smsLinkStatus.data.phone_number_masked}
+                  </Text>
+                  <Text style={styles.settingCaption}>Enter the 6-digit code below</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.settingTitle}>No number linked</Text>
+                  <Text style={styles.settingCaption}>
+                    Verify your number to text Posted about your portfolio, spending, or news
+                  </Text>
+                </>
+              )}
+            </View>
+            {smsLinkStatus.data?.status === 'verified' ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={unlinkSmsLink.isPending}
+                onPress={() => unlinkSmsLink.mutate()}
+                style={styles.syncButton}>
+                <Text style={styles.syncButtonText}>
+                  {unlinkSmsLink.isPending ? 'REMOVING' : 'UNLINK'}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {smsLinkStatus.data?.status !== 'verified' ? (
+            <View style={styles.smsFormRow}>
+              {smsLinkStatus.data?.status !== 'pending' ? (
+                <>
+                  <TextInput
+                    accessibilityLabel="Phone number"
+                    autoCapitalize="none"
+                    keyboardType="phone-pad"
+                    onChangeText={setPhoneInput}
+                    placeholder="+15551234567"
+                    placeholderTextColor={colors.inkFaint}
+                    style={styles.textInput}
+                    value={phoneInput}
+                  />
+                  <Pressable
+                    disabled={requestSmsLink.isPending || phoneInput.trim().length < 8}
+                    onPress={() => requestSmsLink.mutate()}
+                    style={[
+                      styles.connectButton,
+                      (requestSmsLink.isPending || phoneInput.trim().length < 8) &&
+                        styles.connectButtonDisabled,
+                    ]}>
+                    <Text style={styles.connectButtonText}>
+                      {requestSmsLink.isPending ? 'Sending…' : 'Send code'}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    accessibilityLabel="Verification code"
+                    autoCapitalize="none"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    onChangeText={setCodeInput}
+                    placeholder="123456"
+                    placeholderTextColor={colors.inkFaint}
+                    style={styles.textInput}
+                    value={codeInput}
+                  />
+                  <Pressable
+                    disabled={verifySmsLink.isPending || codeInput.trim().length !== 6}
+                    onPress={() => verifySmsLink.mutate()}
+                    style={[
+                      styles.connectButton,
+                      (verifySmsLink.isPending || codeInput.trim().length !== 6) &&
+                        styles.connectButtonDisabled,
+                    ]}>
+                    <Text style={styles.connectButtonText}>
+                      {verifySmsLink.isPending ? 'Verifying…' : 'Verify'}
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          ) : null}
+          {smsLinkStatus.data?.status === 'pending' ? (
+            <Pressable
+              disabled={requestSmsLink.isPending}
+              onPress={() => requestSmsLink.mutate()}
+              style={styles.smsResendRow}>
+              <Text style={styles.connectButtonText}>
+                {requestSmsLink.isPending ? 'Resending…' : 'Resend code'}
+              </Text>
+            </Pressable>
+          ) : null}
+          {requestSmsLink.isError ? (
+            <Text style={styles.connectionError}>{requestSmsLink.error.message}</Text>
+          ) : null}
+          {verifySmsLink.isError ? (
+            <Text style={styles.connectionError}>{verifySmsLink.error.message}</Text>
+          ) : null}
         </View>
 
         <View style={styles.panel}>
@@ -349,7 +501,14 @@ function SettingRow({
 
 const styles = StyleSheet.create({
   settingsGrid: { gap: 16, maxWidth: 920 },
-  panel: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  panel: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   connectionRow: { minHeight: 84, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   providerMark: {
     width: 38,
@@ -381,6 +540,25 @@ const styles = StyleSheet.create({
   connectButton: { height: 45, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connectButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
   connectButtonDisabled: { opacity: 0.5 },
+  smsFormRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  textInput: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 12,
+    color: colors.ink,
+    fontSize: 12,
+  },
+  smsResendRow: { paddingHorizontal: 16, paddingBottom: 14 },
   connectionHelp: {
     color: colors.inkMuted,
     fontSize: 10,

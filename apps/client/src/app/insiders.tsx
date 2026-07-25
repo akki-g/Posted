@@ -34,7 +34,7 @@ import type {
   InsiderTransaction,
   PortfolioInsiderWatchItem,
 } from '@/lib/marketTypes';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function InsidersScreen() {
   const params = useLocalSearchParams<{ symbol?: string }>();
@@ -779,7 +779,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.surface,
     marginBottom: 16,
+    borderRadius: radius.lg,
     overflow: 'hidden',
+    ...cardShadow,
   },
   watchList: { padding: 14, gap: 10 },
   watchCard: {
@@ -824,7 +826,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 5,
   },
-  hero: { backgroundColor: colors.navy, padding: 22, marginBottom: 14 },
+  hero: { backgroundColor: colors.navy, borderRadius: radius.lg, padding: 22, marginBottom: 14 },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
   assetBadge: {
     width: 42,

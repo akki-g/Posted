@@ -221,6 +221,12 @@ export type AuthUser = {
   display_name: string;
 };
 
+export type SmsLinkStatus = {
+  status: 'none' | 'pending' | 'verified';
+  phone_number_masked: string | null;
+  opted_out: boolean;
+};
+
 export type MoneyOverviewResponse = {
   cash_balance: string;
   card_balance: string;

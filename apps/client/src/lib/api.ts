@@ -19,6 +19,7 @@ import type {
   PlaidLinkTokenResponse,
   RecurringStreamSummary,
   SchwabStatus,
+  SmsLinkStatus,
   UserPreferences,
 } from './types';
 
@@ -108,6 +109,19 @@ export const api = {
     request<MoneySyncResponse>(`/money/connections/plaid/${connectionId}/sync`, {
       method: 'POST',
     }),
+  plaidInvestmentsStatus: () =>
+    request<{ configured: boolean; environment: string; demo_mode: boolean; message: string }>(
+      '/connections/plaid-investments/status',
+    ),
+  plaidInvestmentsLinkToken: () =>
+    request<PlaidLinkTokenResponse>('/connections/plaid-investments/link-token', {
+      method: 'POST',
+    }),
+  exchangePlaidInvestmentsToken: (publicToken: string) =>
+    request<ConnectionStatus>('/connections/plaid-investments/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ public_token: publicToken }),
+    }),
   assistantConversation: () => request<AssistantConversationResponse>('/assistant/messages'),
   sendAssistantMessage: (message: string, section: string, screenContext?: string) =>
     request<AssistantMessageSummary>('/assistant/messages', {
@@ -116,4 +130,16 @@ export const api = {
     }),
   clearAssistantConversation: () =>
     request<void>('/assistant/messages', { method: 'DELETE' }),
+  smsLinkStatus: () => request<SmsLinkStatus>('/settings/sms/link'),
+  requestSmsLink: (phoneNumber: string) =>
+    request<void>('/settings/sms/request', {
+      method: 'POST',
+      body: JSON.stringify({ phone_number: phoneNumber }),
+    }),
+  verifySmsLink: (code: string) =>
+    request<SmsLinkStatus>('/settings/sms/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  unlinkSmsLink: () => request<void>('/settings/sms/link', { method: 'DELETE' }),
 };

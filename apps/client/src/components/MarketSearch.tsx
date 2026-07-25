@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { marketApi } from '@/lib/marketApi';
+import { symbolColor } from '@/lib/symbolColor';
 import { colors } from '@/theme/tokens';
 
 export function MarketSearch({
@@ -124,14 +125,16 @@ export function MarketSearch({
             {results.isError ? (
               <Text style={styles.errorText}>{results.error.message}</Text>
             ) : null}
-            {results.data?.map((item) => (
+            {results.data?.map((item) => {
+              const { background, foreground } = symbolColor(item.symbol);
+              return (
               <Pressable
                 accessibilityRole="link"
                 key={item.symbol}
                 onPress={() => openSymbol(item.symbol)}
                 style={({ pressed }) => [styles.resultRow, pressed && styles.resultPressed]}>
-                <View style={styles.symbolBadge}>
-                  <Text style={styles.symbolBadgeText}>{item.symbol.slice(0, 2)}</Text>
+                <View style={[styles.symbolBadge, { backgroundColor: background }]}>
+                  <Text style={[styles.symbolBadgeText, { color: foreground }]}>{item.symbol.slice(0, 2)}</Text>
                 </View>
                 <View style={styles.resultCopy}>
                   <View style={styles.resultTitleRow}>
@@ -152,7 +155,8 @@ export function MarketSearch({
                   <ArrowRight size={15} color={colors.inkFaint} />
                 </View>
               </Pressable>
-            ))}
+              );
+            })}
             {!results.isLoading && results.data?.length === 0 ? (
               <Text style={styles.stateText}>No matching US equities or ETFs.</Text>
             ) : null}
@@ -240,11 +244,10 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 3,
-    backgroundColor: colors.tealSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  symbolBadgeText: { color: colors.tealDark, fontSize: 10, fontWeight: '800' },
+  symbolBadgeText: { fontSize: 10, fontWeight: '800' },
   resultCopy: { flex: 1, minWidth: 0 },
   resultTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   symbol: { color: colors.ink, fontSize: 12, fontWeight: '800' },

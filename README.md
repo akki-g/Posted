@@ -147,7 +147,41 @@ the deterministic signal, source data, and caveats remain available without AI.
 
 For banking, start with Plaid Sandbox variables in `.env`; follow [the connector guide](guides/10-BANKING-CONNECTORS.md). Plaid's native Link SDK requires a custom Expo development build rather than Expo Go. Apple FinanceKit is a later, separately entitled iOS integration and is not a universal Apple Pay subscription ledger.
 
+Investing now supports multiple brokerages: Schwab via OAuth, plus Robinhood and
+other Plaid-covered brokerages connected from Settings → Investing connections in
+the app. This ships a breaking local-database change — the credential table was
+renamed from `oauth_credentials` to `brokerage_credentials` — so existing local
+databases must be recreated (`rm backend/*.db`, then restart the API, or just run
+`make setup`) and Schwab reconnected afterward.
+
 The provider layer stores only encrypted tokens. A production deployment still needs real user authentication, managed encryption keys, migrations, background workers, verified webhooks, privacy controls, and observability before handling actual financial data.
+
+## Telnyx SMS local test
+
+Posted includes a development-only inbound SMS bridge. It acknowledges Telnyx
+immediately, then routes a text from one explicitly configured phone number to
+the existing assistant and sends the concise reply back as SMS. It is not enabled
+until the Telnyx variables in `.env` are supplied.
+
+1. Create a separate **development** Telnyx API key, buy/assign an SMS-capable
+   number to a Messaging Profile, and copy the Telnyx public key. Do not use a
+   production key locally.
+2. Set `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER` (E.164), `TELNYX_PUBLIC_KEY`, and
+   `TELNYX_LOCAL_TEST_PHONE` (your E.164 mobile number) in `.env`. The latter is
+   intentionally mapped only to `DEV_USER_ID` in development.
+3. Start the API with `make api`, then expose it with `ngrok http 8000`.
+4. Set the Messaging Profile's primary webhook to
+   `https://YOUR-NGROK-DOMAIN/api/v1/webhooks/telnyx`. Leave webhook signing on;
+   Posted verifies Telnyx's Ed25519 `timestamp|raw JSON` signature.
+5. Text the Telnyx number from the configured test phone. Try `HELP`, then a
+   question such as `What changed in my portfolio today?`.
+
+For a manual endpoint-only check, temporarily set
+`TELNYX_ALLOW_UNSIGNED_WEBHOOKS=true` in development and POST the sample
+`message.received` payload from Telnyx's documentation. Do not enable that flag
+outside local development. `STOP`/`START` replies are exercised for UI testing;
+they are not durable opt-out storage yet, so do not use this bridge for real
+customer notifications.
 
 ## Useful commands
 

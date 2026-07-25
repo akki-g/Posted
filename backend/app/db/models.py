@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -40,6 +41,21 @@ class UserPreference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     push_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     daily_briefing_time: Mapped[str] = mapped_column(String(8), default="08:00", nullable=False)
+
+
+class SmsLink(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "sms_links"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    phone_number: Mapped[str] = mapped_column(String(20), index=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64))
+    code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    request_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    request_window_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    opted_out: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class BrokerageConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):

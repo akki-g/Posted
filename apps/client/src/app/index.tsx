@@ -15,7 +15,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
 import type { ChartPoint } from '@/lib/types';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
@@ -117,19 +117,39 @@ function PortfolioDashboard() {
               </View>
               <View style={styles.metricCard}>
                 <Text style={styles.metricLabel}>TODAY</Text>
-                <Text style={styles.positiveValue}>
+                <Text
+                  style={
+                    Number(dashboard.data.portfolio.day_change.amount) >= 0
+                      ? styles.positiveValue
+                      : styles.negativeValue
+                  }>
                   {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.day_change.amount)}
                 </Text>
-                <Text style={styles.positiveCaption}>
+                <Text
+                  style={
+                    Number(dashboard.data.portfolio.day_change.amount) >= 0
+                      ? styles.positiveCaption
+                      : styles.negativeCaption
+                  }>
                   {percent(dashboard.data.portfolio.day_change.percent)}
                 </Text>
               </View>
               <View style={styles.metricCard}>
                 <Text style={styles.metricLabel}>TOTAL RETURN</Text>
-                <Text style={styles.metricValue}>
+                <Text
+                  style={
+                    Number(dashboard.data.portfolio.total_gain.amount) >= 0
+                      ? styles.positiveValue
+                      : styles.negativeValue
+                  }>
                   {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.total_gain.amount)}
                 </Text>
-                <Text style={styles.metricCaption}>
+                <Text
+                  style={
+                    Number(dashboard.data.portfolio.total_gain.amount) >= 0
+                      ? styles.positiveCaption
+                      : styles.negativeCaption
+                  }>
                   {percent(dashboard.data.portfolio.total_gain.percent)} all time
                 </Text>
               </View>
@@ -164,7 +184,13 @@ function PortfolioDashboard() {
                       <Text style={styles.accountValue}>
                         {privateMode ? '$••••' : money(account.balance)}
                       </Text>
-                      <Text style={styles.accountChange}>{signedMoney(account.day_change)}</Text>
+                      <Text
+                        style={[
+                          styles.accountChange,
+                          { color: Number(account.day_change) >= 0 ? colors.positive : colors.negative },
+                        ]}>
+                        {signedMoney(account.day_change)}
+                      </Text>
                     </View>
                   </View>
                 ))}
@@ -252,11 +278,20 @@ const styles = StyleSheet.create({
   portfolioValue: { color: colors.ink, fontSize: 31, fontWeight: '600', marginTop: 14, fontVariant: ['tabular-nums'] },
   metricValue: { color: colors.ink, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
   positiveValue: { color: colors.positive, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
+  negativeValue: { color: colors.negative, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
   metricCaption: { color: colors.inkMuted, fontSize: 11, marginTop: 7 },
   positiveCaption: { color: colors.positive, fontSize: 11, fontWeight: '600', marginTop: 7 },
+  negativeCaption: { color: colors.negative, fontSize: 11, fontWeight: '600', marginTop: 7 },
   twoColumn: { flexDirection: 'row', gap: 16, marginBottom: 16, alignItems: 'stretch' },
   stack: { flexDirection: 'column' },
-  panel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
+  panel: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   chartPanel: { flex: 1.65, minHeight: 320 },
   accountPanel: { flex: 1, minHeight: 320 },
   holdingsPanel: { flex: 1.25 },
@@ -276,7 +311,7 @@ const styles = StyleSheet.create({
   accountType: { color: colors.inkMuted, fontSize: 10, marginTop: 4 },
   accountValueBlock: { alignItems: 'flex-end' },
   accountValue: { color: colors.ink, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  accountChange: { color: colors.positive, fontSize: 10, fontWeight: '600', marginTop: 4, fontVariant: ['tabular-nums'] },
+  accountChange: { fontSize: 10, fontWeight: '600', marginTop: 4, fontVariant: ['tabular-nums'] },
   syncMeta: { flex: 1, minHeight: 52, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.positive },
   syncMetaText: { color: colors.inkMuted, fontSize: 10 },

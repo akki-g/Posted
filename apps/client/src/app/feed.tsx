@@ -8,7 +8,7 @@ import { EventList } from '@/components/EventList';
 import { ErrorState, LoadingState } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 const filters = ['all', 'urgent', 'important', 'notable'] as const;
 type Filter = (typeof filters)[number];
@@ -119,7 +119,14 @@ const styles = StyleSheet.create({
   filterActive: { borderColor: colors.navy, backgroundColor: colors.navy },
   filterText: { color: colors.inkMuted, fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
   filterTextActive: { color: colors.white },
-  panel: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  panel: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   resultHeader: {
     minHeight: 52,
     paddingHorizontal: 16,

@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     market_data_yahoo_fallback: bool = True
     sec_user_agent: str = "Posted contact@example.com"
     anthropic_api_key: str | None = None
+    # SignalWire SMS is deliberately opt-in. The local test number is mapped only
+    # to DEV_USER_ID and is never a substitute for production account linking.
+    # signalwire_space_url is the bare host, e.g. "example.signalwire.com".
+    signalwire_space_url: str | None = None
+    signalwire_project_id: str | None = None
+    signalwire_api_token: SecretStr | None = None
+    signalwire_from_number: str | None = None
+    signalwire_local_test_phone: str | None = None
+    # The exact public URL registered as the number's inbound webhook. SignalWire
+    # signs the URL it POSTed to; behind a tunnel request.url is the internal
+    # localhost URL, so signature checks need the public URL to reconstruct it.
+    signalwire_webhook_url: str | None = None
+    signalwire_allow_unsigned_webhooks: bool = False
 
     @field_validator("frontend_origins", mode="before")
     @classmethod
@@ -83,6 +96,15 @@ class Settings(BaseSettings):
     @property
     def finnhub_configured(self) -> bool:
         return bool(self.finnhub_api_key)
+
+    @property
+    def signalwire_configured(self) -> bool:
+        return bool(
+            self.signalwire_space_url
+            and self.signalwire_project_id
+            and self.signalwire_api_token
+            and self.signalwire_from_number
+        )
 
 
 @lru_cache

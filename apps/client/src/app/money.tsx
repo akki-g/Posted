@@ -24,7 +24,7 @@ import type {
   MoneyOverviewResponse,
   SpendingCategorySummary,
 } from '@/lib/types';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function MoneyScreen() {
   useEffect(() => setAssistantSection('money'), []);
@@ -380,7 +380,14 @@ const styles = StyleSheet.create({
   metricCaption: { color: colors.inkMuted, fontSize: 10, marginTop: 7 },
   twoColumn: { flexDirection: 'row', gap: 16, marginBottom: 16, alignItems: 'stretch' },
   stack: { flexDirection: 'column' },
-  panel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
+  panel: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   activityPanel: { flex: 1.5, minHeight: 390 },
   accountsPanel: { flex: 1, minHeight: 390 },
   transactionsPanel: { flex: 1.25 },

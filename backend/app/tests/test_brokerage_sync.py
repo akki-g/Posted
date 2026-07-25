@@ -20,15 +20,24 @@ from app.services.brokerage_sync import (
 NOW = datetime(2026, 7, 25, 15, tzinfo=UTC)
 
 
-def _raw_account(*, provider_account_id: str, symbol: str, qty: str) -> RawBrokerageAccount:
+def _raw_account(
+    *,
+    provider_account_id: str,
+    symbol: str,
+    qty: str,
+    day_change: Decimal = Decimal("5"),
+    total_gain: Decimal = Decimal("100"),
+    position_day_change: Decimal | None = None,
+    position_total_gain: Decimal | None = None,
+) -> RawBrokerageAccount:
     placeholder = uuid4()
     return RawBrokerageAccount(
         provider_account_id=provider_account_id,
         display_name=f"Test {provider_account_id[-4:]}",
         account_type="brokerage",
         balance=Decimal("1000"),
-        day_change=Decimal("5"),
-        total_gain=Decimal("100"),
+        day_change=day_change,
+        total_gain=total_gain,
         positions=(
             PositionObservation(
                 account_id=placeholder,
@@ -43,7 +52,12 @@ def _raw_account(*, provider_account_id: str, symbol: str, qty: str) -> RawBroke
             ),
         ),
         security_names={symbol: f"{symbol} Inc"},
-        metrics={symbol: PositionMetrics(day_change=Decimal("5"), total_gain=Decimal("100"))},
+        metrics={
+            symbol: PositionMetrics(
+                day_change=position_day_change if position_day_change is not None else day_change,
+                total_gain=position_total_gain if position_total_gain is not None else total_gain,
+            )
+        },
     )
 
 
@@ -127,4 +141,72 @@ async def test_shared_symbol_across_two_accounts_reconciles() -> None:
         assert (await session.scalar(select(func.count()).select_from(BrokerageAccount))) == 2
         assert (await session.scalar(select(func.count()).select_from(Position))) == 2
         assert (await session.scalar(select(func.count()).select_from(Security))) == 1
+    await engine.dispose()
+
+
+async def test_position_account_id_and_metrics_come_from_raw_account() -> None:
+    # Regression coverage: Position.account_id must be rebound from the
+    # placeholder UUID on PositionObservation to the real, freshly-flushed
+    # BrokerageAccount.id (via the dataclasses.replace() rebind in _persist),
+    # and Position.day_change/total_gain must come from
+    # RawBrokerageAccount.metrics[symbol] -- not from the account-level
+    # day_change/total_gain fields (which are deliberately set to different
+    # values here) and not zero.
+    engine, session_factory = await _factory()
+    _user_id, connection_id = await _seed_connection(session_factory)
+    accounts = [
+        _raw_account(
+            provider_account_id="acct-1",
+            symbol="AAPL",
+            qty="10",
+            day_change=Decimal("5"),
+            total_gain=Decimal("100"),
+            position_day_change=Decimal("7.25"),
+            position_total_gain=Decimal("123.45"),
+        ),
+        _raw_account(
+            provider_account_id="acct-2",
+            symbol="MSFT",
+            qty="3",
+            day_change=Decimal("9"),
+            total_gain=Decimal("200"),
+            position_day_change=Decimal("11.11"),
+            position_total_gain=Decimal("222.22"),
+        ),
+    ]
+    async with session_factory() as session:
+        connection = await session.get(BrokerageConnection, connection_id)
+        summary = await sync_brokerage_snapshot(
+            session, connection=connection, idempotency_key="key-00000003",
+            accounts=accounts, as_of=NOW,
+        )
+    assert summary.status == "completed"
+
+    async with session_factory() as session:
+        account_rows = (
+            await session.scalars(
+                select(BrokerageAccount).where(BrokerageAccount.connection_id == connection_id)
+            )
+        ).all()
+        account_id_by_provider_id = {a.provider_account_id: a.id for a in account_rows}
+        # Sanity: the real account ids are not the placeholder uuid4()s used
+        # by PositionObservation before the rebind.
+        assert len(account_id_by_provider_id) == 2
+
+        security_rows = (await session.scalars(select(Security))).all()
+        symbol_by_security_id = {s.id: s.symbol for s in security_rows}
+
+        positions = (await session.scalars(select(Position))).all()
+        assert len(positions) == 2
+        positions_by_symbol = {symbol_by_security_id[p.security_id]: p for p in positions}
+
+        aapl = positions_by_symbol["AAPL"]
+        assert aapl.account_id == account_id_by_provider_id["acct-1"]
+        assert aapl.day_change == Decimal("7.25")
+        assert aapl.total_gain == Decimal("123.45")
+
+        msft = positions_by_symbol["MSFT"]
+        assert msft.account_id == account_id_by_provider_id["acct-2"]
+        assert msft.day_change == Decimal("11.11")
+        assert msft.total_gain == Decimal("222.22")
     await engine.dispose()

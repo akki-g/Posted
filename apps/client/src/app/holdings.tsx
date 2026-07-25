@@ -10,7 +10,7 @@ import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money } from '@/lib/format';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function HoldingsScreen() {
   useEffect(() => setAssistantSection('investing'), []);
@@ -77,7 +77,14 @@ const styles = StyleSheet.create({
   summaryLabel: { color: colors.inkFaint, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   summaryValue: { color: colors.ink, fontSize: 22, fontWeight: '700', marginTop: 14, fontVariant: ['tabular-nums'] },
   summaryCaption: { color: colors.inkMuted, fontSize: 10, marginTop: 5 },
-  panel: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  panel: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
   searchBox: {
     width: 190,
     maxWidth: '100%',

@@ -251,6 +251,8 @@ async def sync_schwab_connection(
 ) -> BrokerageSyncSummary:
     """Refresh credentials, fetch a complete snapshot, and atomically replace holdings."""
 
+    if as_of is not None and (as_of.tzinfo is None or as_of.utcoffset() is None):
+        raise SchwabSyncError("as_of must be timezone-aware")
     as_of = (as_of or datetime.now(UTC)).astimezone(UTC)
     prior = await prior_summary(
         session, connection_id=connection.id, idempotency_key=idempotency_key.strip()

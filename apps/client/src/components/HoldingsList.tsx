@@ -3,14 +3,22 @@ import { ArrowUpRight } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { money, number, percent } from '@/lib/format';
+import { symbolColor } from '@/lib/symbolColor';
 import type { HoldingSummary } from '@/lib/types';
-import { colors } from '@/theme/tokens';
+import { colors, radius } from '@/theme/tokens';
 
 function AssetBadge({ symbol }: { symbol: string }) {
-  const color = symbol === 'CASH' ? colors.inkMuted : colors.tealDark;
+  if (symbol === 'CASH') {
+    return (
+      <View style={[styles.assetBadge, styles.assetBadgeCash]}>
+        <Text style={[styles.assetBadgeText, { color: colors.inkMuted }]}>CA</Text>
+      </View>
+    );
+  }
+  const { background, foreground } = symbolColor(symbol);
   return (
-    <View style={[styles.assetBadge, symbol === 'CASH' && styles.assetBadgeCash]}>
-      <Text style={[styles.assetBadgeText, { color }]}>{symbol.slice(0, 2)}</Text>
+    <View style={[styles.assetBadge, { backgroundColor: background }]}>
+      <Text style={[styles.assetBadgeText, { color: foreground }]}>{symbol.slice(0, 2)}</Text>
     </View>
   );
 }
@@ -157,8 +165,7 @@ const styles = StyleSheet.create({
   assetBadge: {
     width: 34,
     height: 34,
-    borderRadius: 3,
-    backgroundColor: colors.tealSoft,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },

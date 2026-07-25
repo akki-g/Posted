@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from httpx import AsyncClient
 
@@ -77,8 +77,13 @@ async def test_finnhub_insider_filing_rows_receive_unique_ids(monkeypatch) -> No
     provider = FinnhubMarketClient(api_key="test")
 
     async def fake_get(path: str, params: dict[str, str | int]) -> dict:
+        today = date.today()
         assert path == "/stock/insider-transactions"
-        assert params == {"symbol": "AAPL"}
+        assert params == {
+            "symbol": "AAPL",
+            "from": (today - timedelta(days=30)).isoformat(),
+            "to": today.isoformat(),
+        }
         shared = {
             "id": "filing-1",
             "name": "Example Insider",

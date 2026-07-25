@@ -46,6 +46,8 @@ export function IndicatorToolbar({
   activeSignalDirections,
   onToggleSignalDirection,
 }: Props) {
+  const openInstance = instances.find((instance) => instance.id === openSettingsId) ?? null;
+
   return (
     <View style={styles.root}>
       <View style={styles.pickerRow}>
@@ -94,43 +96,43 @@ export function IndicatorToolbar({
           <View style={styles.activeChips}>
             {instances.map((instance) => {
               const def = INDICATOR_DEFS[instance.type];
+              const isOpen = openSettingsId === instance.id;
               return (
-                <View key={instance.id} style={styles.chipWrap}>
-                  <View style={styles.chip}>
-                    <View style={[styles.chipSwatch, { backgroundColor: instance.color }]} />
-                    <Text style={styles.chipText}>{def.shortLabel(instance.params)}</Text>
-                    {def.paramSpecs.length ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${def.label} settings`}
-                        onPress={() => (openSettingsId === instance.id ? onCloseSettings() : onOpenSettings(instance.id))}
-                        style={styles.chipIcon}>
-                        <Settings2 size={11} color={colors.inkMuted} />
-                      </Pressable>
-                    ) : null}
+                <View key={instance.id} style={[styles.chip, isOpen && styles.chipOpen]}>
+                  <View style={[styles.chipSwatch, { backgroundColor: instance.color }]} />
+                  <Text style={styles.chipText}>{def.shortLabel(instance.params)}</Text>
+                  {def.paramSpecs.length ? (
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove ${def.label}`}
-                      onPress={() => onRemove(instance.id)}
+                      accessibilityLabel={`${def.label} settings`}
+                      accessibilityState={{ selected: isOpen }}
+                      onPress={() => (isOpen ? onCloseSettings() : onOpenSettings(instance.id))}
                       style={styles.chipIcon}>
-                      <X size={11} color={colors.inkMuted} />
+                      <Settings2 size={11} color={isOpen ? colors.tealDark : colors.inkMuted} />
                     </Pressable>
-                  </View>
-                  {openSettingsId === instance.id ? (
-                    <ParamPopover
-                      params={instance.params}
-                      paramSpecs={def.paramSpecs}
-                      onApply={(params) => {
-                        onUpdateParams(instance.id, params);
-                        onCloseSettings();
-                      }}
-                      onClose={onCloseSettings}
-                    />
                   ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${def.label}`}
+                    onPress={() => onRemove(instance.id)}
+                    style={styles.chipIcon}>
+                    <X size={11} color={colors.inkMuted} />
+                  </Pressable>
                 </View>
               );
             })}
           </View>
+          {openInstance ? (
+            <ParamPopover
+              params={openInstance.params}
+              paramSpecs={INDICATOR_DEFS[openInstance.type].paramSpecs}
+              onApply={(params) => {
+                onUpdateParams(openInstance.id, params);
+                onCloseSettings();
+              }}
+              onClose={onCloseSettings}
+            />
+          ) : null}
         </View>
       ) : null}
 
@@ -209,9 +211,8 @@ const styles = StyleSheet.create({
   intervalButtonActive: { borderColor: colors.teal, backgroundColor: colors.tealSoft },
   intervalText: { color: colors.inkMuted, fontSize: 9, fontWeight: '800' },
   intervalTextActive: { color: colors.tealDark },
-  activeRow: { gap: 6 },
+  activeRow: { gap: 8 },
   activeChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chipWrap: { position: 'relative' },
   chip: {
     minHeight: 28,
     borderWidth: 1,
@@ -223,6 +224,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  chipOpen: { borderColor: colors.teal, backgroundColor: colors.tealSoft },
   chipSwatch: { width: 7, height: 7, borderRadius: 4 },
   chipText: { color: colors.ink, fontSize: 9, fontWeight: '700' },
   chipIcon: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },

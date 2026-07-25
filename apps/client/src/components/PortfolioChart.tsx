@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 
+import { momentumColor } from '@/lib/chartMomentum';
 import { useChartScrub } from '@/lib/chartScrub';
 import type { ChartPoint } from '@/lib/types';
 import { money } from '@/lib/format';
@@ -63,6 +64,7 @@ export function PortfolioChart({ points, onSelectionChange }: Props) {
   const selectedChange = selectedValue - Number(points[0].value);
   const crosshairX = (selectedIndex / Math.max(points.length - 1, 1)) * WIDTH;
   const crosshairY = valueToY(selectedValue, chart.min, chart.max - chart.min || 1);
+  const crosshairColor = momentumColor(points.map((point) => Number(point.value)), selectedIndex);
 
   return (
     <View style={styles.root}>
@@ -146,13 +148,14 @@ export function PortfolioChart({ points, onSelectionChange }: Props) {
             strokeOpacity="0.5"
             strokeWidth="1"
           />
+          <Circle cx={crosshairX} cy={crosshairY} r="7" fill={crosshairColor} opacity={0.16} />
           <Circle
             cx={crosshairX}
             cy={crosshairY}
-            fill={colors.surface}
-            r="5"
-            stroke={colors.teal}
-            strokeWidth="2.5"
+            r="2.5"
+            fill={crosshairColor}
+            stroke={colors.surface}
+            strokeWidth="1.25"
           />
         </Svg>
         <Text style={[styles.axisLabel, styles.axisTop]}>{money(chart.max, true)}</Text>

@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import func, select
 
 from app.config import Settings
@@ -20,7 +21,7 @@ from app.db.session import create_engine, create_session_factory
 from app.providers.schwab.oauth import OAuthTokenSet
 from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
-from app.services.schwab_sync import sync_schwab_connection
+from app.services.schwab_sync import SchwabSyncError, sync_schwab_connection
 
 NOW = datetime(2026, 7, 23, 12, tzinfo=UTC)
 
@@ -189,5 +190,58 @@ async def test_live_schwab_sync_refreshes_and_persists_complete_snapshot() -> No
         )
         assert repeated.repeated is True
         assert await session.scalar(select(func.count(SyncRun.id))) == 1
+
+    await engine.dispose()
+
+
+async def test_naive_as_of_raises_before_any_provider_fetch() -> None:
+    # Regression coverage: sync_schwab_connection must fail fast on a naive
+    # (tz-unaware) as_of instead of silently treating it as local time and
+    # converting it -- and it must do so before any credential lookup or
+    # provider call, not merely inside sync_brokerage_snapshot after the
+    # network round trip.
+    settings = Settings(
+        app_env="test",
+        database_url="sqlite+aiosqlite:///:memory:",
+        demo_mode=False,
+        app_secret="test-vault-key",
+    )
+    engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    user_id = uuid4()
+    connection_id = uuid4()
+    vault = TokenVault(settings.app_secret.get_secret_value())
+    async with session_factory() as session:
+        session.add(User(id=user_id, email="naive@test.local", display_name="Naive"))
+        connection = BrokerageConnection(
+            id=connection_id,
+            user_id=user_id,
+            provider="schwab",
+            display_name="Charles Schwab",
+            status="connected",
+        )
+        session.add(connection)
+        await session.commit()
+
+        def _unexpected_trader(_token: str) -> FakeTraderClient:
+            raise AssertionError("provider must not be fetched for a naive as_of")
+
+        with pytest.raises(SchwabSyncError, match="as_of must be timezone-aware"):
+            await sync_schwab_connection(
+                session,
+                connection=connection,
+                idempotency_key="naive-sync-0001",
+                credential_store=BrokerageCredentialStore(session=session, vault=vault),
+                oauth_client=FakeOAuthClient(),  # type: ignore[arg-type]
+                trader_factory=_unexpected_trader,
+                as_of=datetime(2026, 7, 23, 12),  # naive: no tzinfo
+            )
+
+        # No SyncRun (successful or failed) should have been recorded --
+        # the guard must fire before record_failed_run's provider-error path.
+        assert await session.scalar(select(func.count(SyncRun.id))) == 0
 
     await engine.dispose()

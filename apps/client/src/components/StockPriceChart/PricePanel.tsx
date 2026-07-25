@@ -1,7 +1,9 @@
+import { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Polygon, Rect, Stop } from 'react-native-svg';
 
 import type { ChartScrub } from '@/lib/chartScrub';
+import { momentumColor } from '@/lib/chartMomentum';
 import { money } from '@/lib/format';
 import type { SignalDirection, SignalEvent } from '@/lib/indicators/signals';
 import type { IndicatorInstance, IndicatorSeries } from '@/lib/indicators/types';
@@ -85,6 +87,7 @@ type Props = {
   lineColor: string;
   includeTime: boolean;
   scrub: ChartScrub;
+  onZoomAtRatio?: (ratio: number, zoomIn: boolean) => void;
 };
 
 export function PricePanel({
@@ -101,12 +104,15 @@ export function PricePanel({
   lineColor,
   includeTime,
   scrub,
+  onZoomAtRatio,
 }: Props) {
+  const containerRef = useRef<View>(null);
   const selectedIndex = scrub.selectedIndex;
   const selectedPoint = displayPoints[selectedIndex];
   const volumeWidth = Math.max(0.8, WIDTH / displayPoints.length - 0.6);
   const crosshairX = (selectedIndex / Math.max(displayPoints.length - 1, 1)) * WIDTH;
   const crosshairY = priceToY(selectedPoint.close, chartMin, chartMax - chartMin || 1);
+  const crosshairColor = momentumColor(displayPoints.map((point) => point.close), selectedIndex);
   const visibleSignals = signals.filter(
     (signal) =>
       activeSignalRules.has(signal.rule) &&
@@ -114,8 +120,21 @@ export function PricePanel({
       signal.index < displayPoints.length,
   );
 
+  useEffect(() => {
+    const node = containerRef.current as unknown as HTMLElement | null;
+    if (!node || typeof node.addEventListener !== 'function' || !onZoomAtRatio) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = node.getBoundingClientRect();
+      const ratio = rect.width > 0 ? Math.max(0, Math.min((event.clientX - rect.left) / rect.width, 1)) : 0.5;
+      onZoomAtRatio(ratio, event.deltaY < 0);
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [onZoomAtRatio]);
+
   return (
-    <View style={styles.chartArea} onLayout={scrub.onLayout}>
+    <View ref={containerRef} style={styles.chartArea} onLayout={scrub.onLayout}>
       <Svg width="100%" height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none">
         <Defs>
           <LinearGradient id="stockChartFill" x1="0" y1="0" x2="0" y2="1">
@@ -190,7 +209,8 @@ export function PricePanel({
           strokeOpacity="0.52"
           strokeWidth="1"
         />
-        <Circle cx={crosshairX} cy={crosshairY} fill={colors.surface} r="5" stroke={lineColor} strokeWidth="2.5" />
+        <Circle cx={crosshairX} cy={crosshairY} r="7" fill={crosshairColor} opacity={0.16} />
+        <Circle cx={crosshairX} cy={crosshairY} r="2.5" fill={crosshairColor} stroke={colors.surface} strokeWidth="1.25" />
       </Svg>
       <Text style={[styles.axisLabel, styles.axisTop]}>{money(chartMax)}</Text>
       <Text style={[styles.axisLabel, styles.axisBottom]}>{money(chartMin)}</Text>

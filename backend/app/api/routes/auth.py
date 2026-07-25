@@ -64,11 +64,18 @@ async def google_callback(
     # Mutating an injected `Response` dependency has no effect once the handler
     # returns its own Response object directly (as every branch below does), so
     # the cookie is cleared on each constructed RedirectResponse individually.
-    if (
-        not verify_csrf_state(state_value, settings.app_secret.get_secret_value())
-        or not state_cookie
-        or not hmac.compare_digest(state_cookie, state_value)
-    ):
+    state_signature_valid = verify_csrf_state(state_value, settings.app_secret.get_secret_value())
+    cookie_present = bool(state_cookie)
+    cookie_matches_state = bool(state_cookie) and hmac.compare_digest(state_cookie, state_value)
+    if not state_signature_valid or not cookie_present or not cookie_matches_state:
+        logger.warning(
+            "oauth_csrf_check_failed",
+            state_signature_valid=bool(state_signature_valid),
+            cookie_present=cookie_present,
+            cookie_matches_state=cookie_matches_state,
+            state_len=len(state_value),
+            cookie_len=len(state_cookie) if state_cookie else 0,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired Google OAuth state",

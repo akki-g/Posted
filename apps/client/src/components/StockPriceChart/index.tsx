@@ -1,8 +1,10 @@
+import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { availableResolutions } from '@/lib/chartInteraction';
 import { useChartScrub } from '@/lib/chartScrub';
+import { useChartZoom } from '@/lib/chartZoom';
 import { money, number } from '@/lib/format';
 import { INDICATOR_DEFS, nextIndicatorColor } from '@/lib/indicators/registry';
 import {
@@ -20,12 +22,13 @@ import type {
   IndicatorType,
 } from '@/lib/indicators/types';
 import type { PriceBar } from '@/lib/marketTypes';
-import { colors } from '@/theme/tokens';
+import { colors, radius } from '@/theme/tokens';
 
 import { formatAxisDate, formatTrackingDate, formatVolume } from './formatting';
 import { IndicatorToolbar } from './IndicatorToolbar';
 import { OscillatorPanel } from './OscillatorPanel';
 import { PricePanel, priceToY } from './PricePanel';
+import { RangeBrush } from './RangeBrush';
 
 const WIDTH = 900;
 const HEIGHT = 292;
@@ -60,6 +63,14 @@ function aggregateBars(points: PriceBar[], groupSize: number): PriceBar[] {
     });
   }
   return grouped;
+}
+
+function sliceSeries(series: IndicatorSeries, start: number, end: number): IndicatorSeries {
+  const sliced: IndicatorSeries = {};
+  for (const [key, values] of Object.entries(series)) {
+    sliced[key] = values.slice(start, end + 1);
+  }
+  return sliced;
 }
 
 function chartGeometry(displayPoints: PriceBar[], overlaySeries: IndicatorSeries[]) {
@@ -149,6 +160,12 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
     setResolution('source');
   }, [sourceInterval]);
 
+  const zoom = useChartZoom(displayPoints.length, activeResolution.key);
+  const visiblePoints = useMemo(
+    () => displayPoints.slice(zoom.start, zoom.end + 1),
+    [displayPoints, zoom.start, zoom.end],
+  );
+
   const seriesByInstance = useMemo(() => {
     const map = new Map<string, IndicatorSeries>();
     for (const instance of instances) {
@@ -169,9 +186,18 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
     [instances],
   );
 
+  const visibleOverlayInstances = useMemo(
+    () =>
+      overlayInstances.map((entry) => ({
+        instance: entry.instance,
+        series: sliceSeries(entry.series, zoom.start, zoom.end),
+      })),
+    [overlayInstances, zoom.start, zoom.end],
+  );
+
   const chart = useMemo(
-    () => chartGeometry(displayPoints, overlayInstances.map((entry) => entry.series)),
-    [displayPoints, overlayInstances],
+    () => chartGeometry(visiblePoints, visibleOverlayInstances.map((entry) => entry.series)),
+    [visiblePoints, visibleOverlayInstances],
   );
 
   const signals = useMemo(() => {
@@ -212,31 +238,40 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
     [mutedSignalDirections],
   );
 
-  const scrub = useChartScrub(displayPoints.length, 'point', activeResolution.key);
+  const visibleSignals = useMemo(
+    () =>
+      signals
+        .filter((signal) => signal.index >= zoom.start && signal.index <= zoom.end)
+        .map((signal) => ({ ...signal, index: signal.index - zoom.start })),
+    [signals, zoom.start, zoom.end],
+  );
+
+  const scrub = useChartScrub(visiblePoints.length, 'point', `${activeResolution.key}:${zoom.start}:${zoom.end}`);
+  const selectedIndex = scrub.selectedIndex;
+  const fullSelectedIndex = zoom.start + selectedIndex;
 
   useEffect(() => {
     if (!onContextChange) return;
-    const selectedIndex = scrub.selectedIndex;
-    const selectedPoint = displayPoints[selectedIndex];
+    const selectedPoint = displayPoints[fullSelectedIndex];
     if (!selectedPoint) return;
 
     const instrumentContext = instances
       .map((instance) => {
         const def = INDICATOR_DEFS[instance.type];
         const series = seriesByInstance.get(instance.id)!;
-        const value = primaryValueAt(instance, series, selectedIndex);
+        const value = primaryValueAt(instance, series, fullSelectedIndex);
         return `${def.shortLabel(instance.params)} (${def.formula(instance.params)}) = ${value}`;
       })
       .join('; ');
 
     const signalsAtBar = signals
-      .filter((signal) => signal.index === selectedIndex)
+      .filter((signal) => signal.index === fullSelectedIndex)
       .map((signal) => `${signal.rule} (${signal.direction})`)
       .join(', ');
 
     onContextChange(
       [
-        `The stock chart is displaying ${activeResolution.label} bars.`,
+        `The stock chart is displaying ${activeResolution.label} bars${zoom.isZoomed ? ', zoomed into a subrange of the loaded history' : ''}.`,
         `The inspected bar is ${formatTrackingDate(selectedPoint.timestamp, sourceInterval === '1Min')} with open ${money(selectedPoint.open)}, high ${money(selectedPoint.high)}, low ${money(selectedPoint.low)}, close ${money(selectedPoint.close)}, and volume ${formatVolume(selectedPoint.volume)}.`,
         instrumentContext
           ? `Active technical indicators with their formulas and current values: ${instrumentContext}.`
@@ -249,12 +284,13 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
   }, [
     activeResolution.label,
     displayPoints,
+    fullSelectedIndex,
     instances,
     onContextChange,
-    scrub.selectedIndex,
     seriesByInstance,
     signals,
     sourceInterval,
+    zoom.isZoomed,
   ]);
 
   const onAddIndicator = (type: IndicatorType) => {
@@ -305,10 +341,9 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
     );
   }
 
-  const change = displayPoints.at(-1)!.close - displayPoints[0].close;
+  const change = visiblePoints.at(-1)!.close - visiblePoints[0].close;
   const lineColor = change >= 0 ? colors.teal : colors.negative;
-  const selectedIndex = scrub.selectedIndex;
-  const selectedPoint = displayPoints[selectedIndex];
+  const selectedPoint = visiblePoints[selectedIndex];
 
   return (
     <View style={styles.root}>
@@ -336,7 +371,7 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
             <Text style={styles.inspectionTime}>
               {formatTrackingDate(selectedPoint.timestamp, sourceInterval === '1Min')}
             </Text>
-            <Text style={styles.inspectionHint}>MOVE OR DRAG ACROSS THE CHART</Text>
+            <Text style={styles.inspectionHint}>SCROLL TO ZOOM · DRAG TO INSPECT</Text>
           </View>
           <View>
             <Text style={styles.closeLabel}>CLOSE</Text>
@@ -353,16 +388,16 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
               color={instance.color}
               key={instance.id}
               label={INDICATOR_DEFS[instance.type].shortLabel(instance.params)}
-              value={primaryValueAt(instance, seriesByInstance.get(instance.id)!, selectedIndex)}
+              value={primaryValueAt(instance, seriesByInstance.get(instance.id)!, fullSelectedIndex)}
             />
           ))}
         </View>
       </View>
 
       <PricePanel
-        displayPoints={displayPoints}
-        overlays={overlayInstances}
-        signals={signals}
+        displayPoints={visiblePoints}
+        overlays={visibleOverlayInstances}
+        signals={visibleSignals}
         activeSignalRules={activeSignalRules}
         activeSignalDirections={activeSignalDirections}
         chartMin={chart.min}
@@ -373,18 +408,20 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
         lineColor={lineColor}
         includeTime={sourceInterval === '1Min'}
         scrub={scrub}
+        onZoomAtRatio={zoom.zoomAtRatio}
       />
 
       {oscillatorInstances.map((instance) => {
         const def = INDICATOR_DEFS[instance.type];
+        const fullSeries = seriesByInstance.get(instance.id)!;
         return (
           <OscillatorPanel
             key={instance.id}
             title={`${def.label} (${def.shortLabel(instance.params)})`}
             instance={instance}
-            series={seriesByInstance.get(instance.id)!}
+            series={sliceSeries(fullSeries, zoom.start, zoom.end)}
             domain={def.domain === 'zeroToHundred' ? 'zeroToHundred' : 'auto'}
-            pointCount={displayPoints.length}
+            pointCount={visiblePoints.length}
             scrub={scrub}
             paramSpecs={def.paramSpecs}
             isSettingsOpen={openSettings?.anchor === 'panel' && openSettings.id === instance.id}
@@ -396,13 +433,47 @@ export function StockPriceChart({ points, sourceInterval, onContextChange }: Pro
         );
       })}
 
+      <View style={styles.zoomRow}>
+        <RangeBrush
+          points={displayPoints}
+          start={zoom.start}
+          end={zoom.end}
+          lastIndex={zoom.lastIndex}
+          onChange={zoom.setRange}
+        />
+        <View style={styles.zoomButtons}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Zoom in"
+            onPress={() => zoom.zoomAtRatio(0.5, true)}
+            style={styles.zoomButton}>
+            <ZoomIn size={13} color={colors.inkMuted} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Zoom out"
+            onPress={() => zoom.zoomAtRatio(0.5, false)}
+            style={styles.zoomButton}>
+            <ZoomOut size={13} color={colors.inkMuted} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reset zoom"
+            disabled={!zoom.isZoomed}
+            onPress={zoom.reset}
+            style={[styles.zoomButton, !zoom.isZoomed && styles.zoomButtonDisabled]}>
+            <Maximize2 size={12} color={zoom.isZoomed ? colors.inkMuted : colors.inkFaint} />
+          </Pressable>
+        </View>
+      </View>
+
       <View style={styles.dateRow}>
         <Text style={styles.dateText}>
-          {formatAxisDate(displayPoints[0].timestamp, sourceInterval === '1Min')}
+          {formatAxisDate(visiblePoints[0].timestamp, sourceInterval === '1Min')}
         </Text>
         <Text style={styles.volumeLabel}>VOLUME</Text>
         <Text style={styles.dateText}>
-          {formatAxisDate(displayPoints.at(-1)!.timestamp, sourceInterval === '1Min')}
+          {formatAxisDate(visiblePoints.at(-1)!.timestamp, sourceInterval === '1Min')}
         </Text>
       </View>
     </View>
@@ -438,8 +509,26 @@ const styles = StyleSheet.create({
   readout: { minWidth: 42 },
   readoutLabel: { color: colors.inkFaint, fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
   readoutValue: { color: colors.ink, fontSize: 10, fontWeight: '700', marginTop: 4, fontVariant: ['tabular-nums'] },
+  zoomRow: {
+    marginTop: 10,
+    paddingHorizontal: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  zoomButtons: { flexDirection: 'row', gap: 5 },
+  zoomButton: {
+    width: 26,
+    height: 26,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonDisabled: { opacity: 0.45 },
   dateRow: {
-    marginTop: -2,
+    marginTop: 6,
     paddingHorizontal: 4,
     paddingBottom: 9,
     flexDirection: 'row',

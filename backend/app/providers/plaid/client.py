@@ -97,6 +97,16 @@ class PlaidClient:
         )
         return tuple(payload.get("accounts") or ())
 
+    async def get_investment_holdings(self, access_token: str) -> dict[str, Any]:
+        return await self._post(
+            "/investments/holdings/get",
+            {
+                "client_id": self._client_id,
+                "secret": self._secret,
+                "access_token": access_token,
+            },
+        )
+
     async def sync_transactions(
         self, access_token: str, *, cursor: str | None = None
     ) -> PlaidSyncPage:

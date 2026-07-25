@@ -18,7 +18,7 @@ import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } fro
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
-import { colors } from '@/theme/tokens';
+import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function InvestScreen() {
   useEffect(() => setAssistantSection('investing'), []);
@@ -27,13 +27,16 @@ export default function InvestScreen() {
   const [privateMode, setPrivateMode] = useState(false);
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
-  const connection =
-    connections.data?.find((item) => !item.demo_mode) ?? connections.data?.[0];
+  const liveConnections = connections.data?.filter((item) => !item.demo_mode) ?? [];
+  const connection = liveConnections[0] ?? connections.data?.[0];
 
   const sync = useMutation({
     mutationFn: async () => {
-      if (!connection) throw new Error('Connect Schwab before synchronizing');
-      return api.sync(connection.id);
+      const targets =
+        liveConnections.length > 0 ? liveConnections : connection ? [connection] : [];
+      if (targets.length === 0) throw new Error('Connect a brokerage before synchronizing');
+      const results = await Promise.all(targets.map((item) => api.sync(item.id)));
+      return results[results.length - 1];
     },
     onSuccess: async () => {
       await Promise.all([
@@ -51,7 +54,7 @@ export default function InvestScreen() {
   return (
     <AppShell
       title="Investing"
-      eyebrow="SCHWAB PORTFOLIO"
+      eyebrow="PORTFOLIO"
       refreshing={dashboard.isRefetching || connections.isRefetching}
       onRefresh={() => void refresh()}
       headerAction={
@@ -76,7 +79,7 @@ export default function InvestScreen() {
       {dashboard.data ? (
         <>
           {dashboard.data.portfolio.demo_mode ? (
-            <DemoBanner message="Sample investments. Connect Schwab in Settings, then sync to replace them." />
+            <DemoBanner message="Sample investments. Connect a brokerage in Settings, then sync to replace them." />
           ) : null}
 
           <MarketSearch />
@@ -144,7 +147,7 @@ export default function InvestScreen() {
 
           <View style={styles.actionRow}>
             <ActionButton
-              label={sync.isPending ? 'Syncing Schwab…' : 'Sync Schwab'}
+              label={sync.isPending ? 'Syncing…' : 'Sync all'}
               disabled={sync.isPending || !connection}
               onPress={() => sync.mutate()}
               icon={<RefreshCw size={14} color={colors.white} />}
@@ -160,13 +163,13 @@ export default function InvestScreen() {
           <View style={styles.panel}>
             <SectionHeader
               title="Largest holdings"
-              caption="Market value from your latest Schwab snapshot"
+              caption="Market value from your latest snapshot"
             />
             <HoldingsList holdings={dashboard.data.top_holdings} limit={6} />
           </View>
 
           <View style={styles.panel}>
-            <SectionHeader title="Accounts" caption="Authorized Schwab accounts" />
+            <SectionHeader title="Accounts" caption="Authorized brokerage accounts" />
             {dashboard.data.accounts.map((account) => (
               <View key={account.id} style={styles.accountRow}>
                 <View style={styles.accountMark}>
@@ -293,6 +296,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.surface,
     marginBottom: 14,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...cardShadow,
   },
   accountRow: {
     minHeight: 72,

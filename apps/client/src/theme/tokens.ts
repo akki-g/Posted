@@ -1,5 +1,5 @@
 export const colors = {
-  canvas: '#F3F5F7',
+  canvas: '#EDF0F4',
   surface: '#FFFFFF',
   surfaceMuted: '#E9EDF1',
   surfaceStrong: '#DDE3E8',
@@ -45,6 +45,15 @@ export const radius = {
   md: 7,
   lg: 12,
   pill: 999,
+} as const;
+
+/** Soft elevation for card-style surfaces. Spread into a StyleSheet entry alongside borderRadius. */
+export const cardShadow = {
+  shadowColor: '#0B1420',
+  shadowOpacity: 0.06,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 8 },
+  elevation: 2,
 } as const;
 
 export const breakpoints = {

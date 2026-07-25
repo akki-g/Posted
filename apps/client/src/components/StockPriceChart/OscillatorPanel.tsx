@@ -85,37 +85,38 @@ export function OscillatorPanel({
   const crosshairX = (selectedIndex / Math.max(pointCount - 1, 1)) * WIDTH;
 
   return (
-    <View style={[styles.root, isSettingsOpen && styles.rootSettingsOpen]}>
+    <View style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.headerActions}>
           {paramSpecs.length ? (
-            <View style={styles.settingsAnchor}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${title} settings`}
-                onPress={onOpenSettings}
-                style={styles.iconButton}>
-                <Settings2 size={13} color={colors.inkMuted} />
-              </Pressable>
-              {isSettingsOpen ? (
-                <ParamPopover
-                  params={instance.params}
-                  paramSpecs={paramSpecs}
-                  onApply={(params) => {
-                    onUpdateParams(params);
-                    onCloseSettings();
-                  }}
-                  onClose={onCloseSettings}
-                />
-              ) : null}
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${title} settings`}
+              accessibilityState={{ selected: isSettingsOpen }}
+              onPress={() => (isSettingsOpen ? onCloseSettings() : onOpenSettings())}
+              style={[styles.iconButton, isSettingsOpen && styles.iconButtonActive]}>
+              <Settings2 size={13} color={isSettingsOpen ? colors.tealDark : colors.inkMuted} />
+            </Pressable>
           ) : null}
           <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${title}`} onPress={onRemove} style={styles.iconButton}>
             <X size={13} color={colors.inkMuted} />
           </Pressable>
         </View>
       </View>
+      {isSettingsOpen ? (
+        <View style={styles.paramRow}>
+          <ParamPopover
+            params={instance.params}
+            paramSpecs={paramSpecs}
+            onApply={(params) => {
+              onUpdateParams(params);
+              onCloseSettings();
+            }}
+            onClose={onCloseSettings}
+          />
+        </View>
+      ) : null}
       <View style={styles.chartArea}>
         <Svg width="100%" height={HEIGHT} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none">
           {domain === 'zeroToHundred' ? (
@@ -186,9 +187,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-  rootSettingsOpen: { zIndex: 30 },
   header: {
-    zIndex: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -197,7 +196,7 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.inkMuted, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 },
   headerActions: { flexDirection: 'row', gap: 6 },
-  settingsAnchor: { position: 'relative' },
+  paramRow: { paddingHorizontal: 4, marginBottom: 8 },
   iconButton: {
     width: 22,
     height: 22,
@@ -207,6 +206,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconButtonActive: { borderColor: colors.teal, backgroundColor: colors.tealSoft },
   chartArea: { height: HEIGHT, position: 'relative', overflow: 'hidden' },
   trackingLayer: {
     position: 'absolute',
