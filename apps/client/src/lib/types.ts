@@ -77,6 +77,17 @@ export type DashboardResponse = {
 
 export type FeedResponse = { items: EventSummary[]; unread_count: number; total: number };
 
+export type NewsRefreshResponse = {
+  held_symbols: number;
+  fetched: number;
+  normalized: number;
+  rejected: number;
+  duplicates_skipped: number;
+  inserted: number;
+  providers: string[];
+  warnings: string[];
+};
+
 export type MorningDebriefResponse = {
   generated_at: string;
   available: boolean;
@@ -88,6 +99,7 @@ export type AssistantMessageSummary = {
   role: 'user' | 'assistant';
   content: string;
   section: string | null;
+  sources: { title: string; url: string }[] | null;
   created_at: string;
 };
 
@@ -201,6 +213,12 @@ export type MoneySyncResponse = {
 export type MoneyTransactionsResponse = {
   items: MoneyTransactionSummary[];
   total: number;
+};
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  display_name: string;
 };
 
 export type MoneyOverviewResponse = {

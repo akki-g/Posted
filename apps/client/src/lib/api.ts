@@ -1,8 +1,10 @@
 import { Platform } from 'react-native';
 
+import { getToken } from './auth';
 import type {
   AssistantConversationResponse,
   AssistantMessageSummary,
+  AuthUser,
   ConnectionStatus,
   DashboardResponse,
   EventSummary,
@@ -13,6 +15,7 @@ import type {
   MoneyTransactionsResponse,
   MoneySyncResponse,
   MorningDebriefResponse,
+  NewsRefreshResponse,
   PlaidLinkTokenResponse,
   RecurringStreamSummary,
   SchwabStatus,
@@ -28,9 +31,14 @@ export const API_URL =
     : 'http://127.0.0.1:8000/api/v1');
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getToken();
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options?.headers,
+    },
   });
   if (!response.ok) {
     const body = await response.text();
@@ -51,6 +59,7 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/dashboard'),
   holdings: () => request<HoldingSummary[]>('/holdings'),
   feed: (query = '') => request<FeedResponse>(`/feed${query}`),
+  refreshNews: () => request<NewsRefreshResponse>('/feed/refresh', { method: 'POST' }),
   morningDebrief: () => request<MorningDebriefResponse>('/feed/debrief'),
   event: (id: string) => request<EventSummary>(`/feed/${id}`),
   markRead: (id: string) => request<void>(`/feed/${id}/read`, { method: 'POST' }),
@@ -58,6 +67,9 @@ export const api = {
   schwabStatus: () => request<SchwabStatus>('/connections/schwab/status'),
   authorizeSchwab: () =>
     request<{ authorization_url: string }>('/connections/schwab/authorize'),
+  authorizeGoogle: () =>
+    request<{ authorization_url: string }>('/auth/google/authorize'),
+  me: () => request<AuthUser>('/auth/me'),
   preferences: () => request<UserPreferences>('/settings'),
   updatePreferences: (preferences: UserPreferences) =>
     request<UserPreferences>('/settings', {
