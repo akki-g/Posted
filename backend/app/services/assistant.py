@@ -31,7 +31,7 @@ from app.services.money import get_money_overview, get_money_transactions, get_r
 
 logger = structlog.get_logger()
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 MAX_TOOL_ITERATIONS = 6
 
 SECTION_FRAMING = {
@@ -448,7 +448,10 @@ async def run_assistant_turn(
                 max_tokens=1500,
                 system=system,
                 tools=TOOLS,
-                thinking={"type": "adaptive"},
+                # claude-haiku-4-5 does not support extended thinking (adaptive is
+                # 4.6+ only, and this gateway rejects enabled+budget_tokens too), so
+                # omit the thinking parameter entirely - sending any thinking config
+                # returns a 400 and the whole turn falls back to the error reply.
                 messages=messages,
             )
         except RateLimitError:
