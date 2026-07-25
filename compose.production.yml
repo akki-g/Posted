@@ -1,17 +1,21 @@
-# Production deployment. Local dev uses docker-compose.yml instead (Postgres +
-# backend only, no frontend container, DEMO_MODE=true).
+# Production deployment. Uses the same root .env as local dev and
+# docker-compose.yml -- Compose auto-loads .env from the project directory,
+# no --env-file flag needed. Local dev still works off the same file; only
+# APP_ENV/DATABASE_URL/DEMO_MODE are forced below regardless of what .env has.
 #
-# Prerequisites on the EC2 host, then run with --env-file so ${VAR} substitution
-# in this file (POSTGRES_PASSWORD, APP_SECRET) picks up .env.production instead
-# of silently falling through to the project directory's plain .env:
+# Before running this on the EC2 host:
 #   1. `docker network create portfolio-edge` (once, shared with the other apps
 #      behind the same reverse proxy) -- skip this if it already exists.
-#   2. A `.env.production` file at the repo root (copy `.env.production.example`
-#      and fill in real values -- never commit it).
-#   3. One nginx server block added in the personal-portfolio repo's edge proxy
+#   2. Add POSTGRES_PASSWORD=<a long random value> to .env -- it's new, this
+#      repo didn't need it before Postgres was added for production.
+#   3. Update these existing .env values from their localhost dev defaults to
+#      your real deployed domain: FRONTEND_ORIGINS, FRONTEND_APP_URL,
+#      FRONTEND_LOGIN_CALLBACK_URL, GOOGLE_REDIRECT_URI, SCHWAB_REDIRECT_URI.
+#      Google/Schwab's own registered redirect URIs must match exactly.
+#   4. One nginx server block added in the personal-portfolio repo's edge proxy
 #      config routing your Posted domain to `posted-web:8080` -- not this repo.
 #
-#   docker compose -f compose.production.yml --env-file .env.production up -d --build
+#   docker compose -f compose.production.yml up -d --build
 
 services:
   postgres:
@@ -20,7 +24,7 @@ services:
     environment:
       POSTGRES_DB: posted
       POSTGRES_USER: posted
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U posted -d posted"]
       interval: 5s
@@ -46,11 +50,11 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env.production
+      - .env
     environment:
       APP_ENV: production
-      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env.production}
-      DATABASE_URL: postgresql+asyncpg://posted:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}@postgres:5432/posted
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      DATABASE_URL: postgresql+asyncpg://posted:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/posted
       DEMO_MODE: "false"
     security_opt:
       - no-new-privileges:true

@@ -1,6 +1,5 @@
 # Secrets
 .env
-.env.production
 *.pem
 
 # Python
