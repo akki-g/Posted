@@ -28,12 +28,16 @@ export const API_URL =
   configuredUrl ??
   (Platform.OS === 'android'
     ? 'http://10.0.2.2:8000/api/v1'
-    : 'http://127.0.0.1:8000/api/v1');
+    : 'http://localhost:8000/api/v1');
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
+    // Needed so the browser stores/sends the Google OAuth CSRF cookie across
+    // the frontend (8081) <-> backend (8000) origin split in local dev; in
+    // production these are same-origin via the nginx /api/ proxy anyway.
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -105,10 +109,10 @@ export const api = {
       method: 'POST',
     }),
   assistantConversation: () => request<AssistantConversationResponse>('/assistant/messages'),
-  sendAssistantMessage: (message: string, section: string) =>
+  sendAssistantMessage: (message: string, section: string, screenContext?: string) =>
     request<AssistantMessageSummary>('/assistant/messages', {
       method: 'POST',
-      body: JSON.stringify({ message, section }),
+      body: JSON.stringify({ message, section, screen_context: screenContext }),
     }),
   clearAssistantConversation: () =>
     request<void>('/assistant/messages', { method: 'DELETE' }),
