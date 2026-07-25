@@ -29,8 +29,22 @@ def get_current_user_id(
     authorization: str | None = Header(default=None),
     x_posted_user_id: UUID | None = Header(default=None),
 ) -> UUID:
+    """Resolve the request's user.
+
+    In demo mode this falls back to a shared dev user so the app works with
+    zero setup. Outside demo mode, only a signed session token is trusted --
+    the client-supplied X-Posted-User-Id header is not, since anyone could
+    set it to impersonate any account.
+    """
+
     settings: Settings = request.app.state.settings
     bearer_user_id = _resolve_bearer_user_id(authorization, settings)
+    if not settings.demo_mode:
+        if bearer_user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+            )
+        return bearer_user_id
     return bearer_user_id or x_posted_user_id or settings.dev_user_id
 
 
