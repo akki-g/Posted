@@ -109,6 +109,17 @@ class FeedResponse(APIModel):
     total: int
 
 
+class NewsRefreshResponse(APIModel):
+    held_symbols: int
+    fetched: int
+    normalized: int
+    rejected: int
+    duplicates_skipped: int
+    inserted: int
+    providers: list[str]
+    warnings: list[str]
+
+
 class MorningDebriefResponse(APIModel):
     generated_at: datetime
     available: bool
@@ -145,6 +156,12 @@ class ConnectionStatus(APIModel):
 
 class OAuthAuthorizeResponse(APIModel):
     authorization_url: str
+
+
+class AuthUser(APIModel):
+    id: UUID
+    email: str
+    display_name: str
 
 
 class SyncRequest(APIModel):
