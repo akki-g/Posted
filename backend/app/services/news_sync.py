@@ -26,8 +26,7 @@ from app.db.models import (
     Position,
     Security,
 )
-from app.domain.enums import EventType
-from app.domain.errors import ProviderNotConfiguredError
+from app.domain.enums import EventProvider, EventType
 from app.domain.models import (
     CanonicalEvent,
     DedupePolicy,
@@ -40,7 +39,7 @@ from app.domain.models import (
 from app.events.dedupe import deduplicate_events
 from app.events.normalize import normalize_event
 from app.impact.scoring import assess_impact
-from app.providers.openbb.news import OpenBBNewsAdapter
+from app.providers.news.multi import MultiSourceNewsAdapter
 from app.services.ai_insights import generate_event_insight
 
 logger = structlog.get_logger()
@@ -67,7 +66,15 @@ IMPACT_POLICY = ImpactPolicy(
     },
     form_materiality={"8-K": 75.0, "10-Q": 60.0, "10-K": 65.0},
 )
-DEDUPE_POLICY = DedupePolicy()
+DEDUPE_POLICY = DedupePolicy(
+    provider_priority={
+        EventProvider.ALPACA: 10,
+        EventProvider.FINNHUB: 20,
+        EventProvider.SEC: 30,
+        EventProvider.YFINANCE: 40,
+        EventProvider.OPENBB: 50,
+    }
+)
 
 # AI insight generation is a per-call cost; only spend it on events worth surfacing.
 _AI_INSIGHT_LEVELS = {"urgent", "important"}
@@ -87,6 +94,7 @@ class NewsSyncSummary:
     rejected: int
     duplicates_skipped: int
     inserted: int
+    providers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -130,7 +138,20 @@ async def sync_portfolio_news(
     )
     if not security_by_symbol:
         return NewsSyncSummary(
-            held_symbols=0, fetched=0, normalized=0, rejected=0, duplicates_skipped=0, inserted=0
+            held_symbols=0,
+            fetched=0,
+            normalized=0,
+            rejected=0,
+            duplicates_skipped=0,
+            inserted=0,
+            providers=[
+                name
+                for name, configured in (
+                    ("alpaca", settings.alpaca_configured),
+                    ("finnhub", settings.finnhub_configured),
+                )
+                if configured
+            ],
         )
 
     securities_by_id = {security.id: security for security in security_by_symbol.values()}
@@ -145,34 +166,13 @@ async def sync_portfolio_news(
         for security_id, weight_pct in weight_by_security.items()
     )
 
-    adapter = OpenBBNewsAdapter(provider=settings.openbb_news_provider)
-    try:
-        envelopes = await adapter.fetch_company_news(
-            symbols=[security.symbol for security in security_by_symbol.values()],
-            limit=30,
-        )
-    except ProviderNotConfiguredError as exc:
-        logger.warning("news_provider_not_configured", error=str(exc))
-        return NewsSyncSummary(
-            held_symbols=len(security_by_symbol),
-            fetched=0,
-            normalized=0,
-            rejected=0,
-            duplicates_skipped=0,
-            inserted=0,
-            warnings=[str(exc)],
-        )
-    except Exception as exc:  # noqa: BLE001 - a news outage must never fail the sync
-        logger.warning("news_fetch_failed", error=str(exc))
-        return NewsSyncSummary(
-            held_symbols=len(security_by_symbol),
-            fetched=0,
-            normalized=0,
-            rejected=0,
-            duplicates_skipped=0,
-            inserted=0,
-            warnings=[f"news fetch failed: {exc}"],
-        )
+    fetch_result = await MultiSourceNewsAdapter(settings=settings).fetch_company_news(
+        symbols=[security.symbol for security in security_by_symbol.values()],
+        limit=60,
+    )
+    envelopes = fetch_result.envelopes
+    for warning in fetch_result.warnings:
+        logger.warning("news_provider_failed", warning=warning)
 
     def resolve_securities(
         *, symbols: Sequence[str], cik: str | None
@@ -298,4 +298,6 @@ async def sync_portfolio_news(
         rejected=rejected_count,
         duplicates_skipped=duplicates_skipped,
         inserted=inserted,
+        providers=list(fetch_result.providers),
+        warnings=list(fetch_result.warnings),
     )

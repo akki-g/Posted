@@ -39,6 +39,7 @@ async def send(
         settings=settings,
         message=request.message,
         section=request.section,
+        screen_context=request.screen_context,
     )
     return AssistantMessageSummary.model_validate(row)
 

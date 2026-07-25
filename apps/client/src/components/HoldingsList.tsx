@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { ArrowUpRight } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
@@ -23,6 +24,7 @@ export function HoldingsList({
   limit?: number;
   compact?: boolean;
 }) {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const desktop = width >= 760;
   const visible = typeof limit === 'number' ? holdings.slice(0, limit) : holdings;
@@ -33,7 +35,19 @@ export function HoldingsList({
         {visible.map((holding) => {
           const positive = Number(holding.day_change) >= 0;
           return (
-            <Pressable key={holding.security_id} style={styles.mobileRow}>
+            <Pressable
+              accessibilityRole={holding.asset_type === 'cash' ? undefined : 'link'}
+              key={holding.security_id}
+              onPress={
+                holding.asset_type === 'cash'
+                  ? undefined
+                  : () =>
+                      router.push({
+                        pathname: '/stock/[symbol]',
+                        params: { symbol: holding.symbol },
+                      })
+              }
+              style={styles.mobileRow}>
               <AssetBadge symbol={holding.symbol} />
               <View style={styles.mobileIdentity}>
                 <Text style={styles.symbol}>{holding.symbol}</Text>
@@ -66,7 +80,19 @@ export function HoldingsList({
       {visible.map((holding) => {
         const positive = Number(holding.day_change) >= 0;
         return (
-          <Pressable key={holding.security_id} style={({ pressed }) => [styles.tableRow, pressed && styles.rowPressed]}>
+          <Pressable
+            accessibilityRole={holding.asset_type === 'cash' ? undefined : 'link'}
+            key={holding.security_id}
+            onPress={
+              holding.asset_type === 'cash'
+                ? undefined
+                : () =>
+                    router.push({
+                      pathname: '/stock/[symbol]',
+                      params: { symbol: holding.symbol },
+                    })
+            }
+            style={({ pressed }) => [styles.tableRow, pressed && styles.rowPressed]}>
             <View style={[styles.identity, styles.securityColumn]}>
               <AssetBadge symbol={holding.symbol} />
               <View style={styles.identityText}>

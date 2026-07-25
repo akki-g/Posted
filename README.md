@@ -11,6 +11,8 @@ The client is a single Expo/React Native application for web, iOS, and Android. 
 - Native Plaid Link onboarding plus paginated transaction synchronization and manual refresh
 - Pull-to-refresh behavior on the core money screens
 - Mobile Investing tab with Schwab accounts, balances, holdings, gains, privacy mode, and manual sync
+- Searchable stock research with Alpaca IEX history, Finnhub fundamentals/earnings, and sourced news
+- Portfolio insider tracker with Finnhub transactions/MSPR sentiment and grounded AI interpretation
 - Seeded demo portfolio, idempotent demo sync, and typed REST API
 - Schwab OAuth, encrypted token storage, automatic access-token refresh, and complete-snapshot reconciliation
 - OpenBB news and Schwab account adapters behind provider-neutral contracts
@@ -117,7 +119,18 @@ The adapters translate vendor payloads at the boundary. Your modules own the bus
 
 ## Live-provider setup
 
-Install OpenBB only when you are ready to exercise live news retrieval:
+Add `ALPACA_API_KEY`, `ALPACA_API_SECRET`, and `FINNHUB_API_KEY` to `.env` to
+enable the stock-research page and the multi-source portfolio news feed. Confirm
+the configured credentials without printing them:
+
+```bash
+cd backend
+uv run python scripts/check_news_keys.py
+```
+
+Alpaca and Finnhub news is fetched concurrently, normalized, deduplicated, scored,
+and stored in the existing impact feed. OpenBB remains a fallback only when neither
+direct provider is configured. Install that optional fallback with:
 
 ```bash
 cd backend
@@ -125,6 +138,12 @@ uv sync --extra openbb
 ```
 
 Add the desired provider key to `.env`; the adapter defaults to OpenBB's `yfinance` provider for development. For Schwab, use the exact callback URL approved for your app, then follow [the Schwab MVP testing guide](guides/11-SCHWAB-MVP-TESTING.md). Never commit `.env`.
+
+The same Finnhub key powers reported insider transactions and monthly insider
+sentiment (MSPR). The Insider Activity screen keeps discretionary purchases/sales
+separate from awards, gifts, withholding, and option exercises. When
+`ANTHROPIC_API_KEY` is configured, Posted adds a portfolio-aware interpretation;
+the deterministic signal, source data, and caveats remain available without AI.
 
 For banking, start with Plaid Sandbox variables in `.env`; follow [the connector guide](guides/10-BANKING-CONNECTORS.md). Plaid's native Link SDK requires a custom Expo development build rather than Expo Go. Apple FinanceKit is a later, separately entitled iOS integration and is not a universal Apple Pay subscription ledger.
 

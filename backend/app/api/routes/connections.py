@@ -203,6 +203,7 @@ async def _sync_news_best_effort(
             fetched=summary.fetched,
             inserted=summary.inserted,
             duplicates_skipped=summary.duplicates_skipped,
+            providers=summary.providers,
             warnings=summary.warnings,
         )
     except Exception as exc:  # noqa: BLE001 - news refresh must never break a portfolio sync

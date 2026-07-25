@@ -5,6 +5,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { HoldingsList } from '@/components/HoldingsList';
+import { MarketSearch } from '@/components/MarketSearch';
 import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
@@ -29,6 +30,7 @@ export default function HoldingsScreen() {
 
   return (
     <AppShell title="Holdings" eyebrow="POSITIONS ACROSS ALL ACCOUNTS">
+      <MarketSearch />
       <View style={styles.summaryRow}>
         <View style={styles.summaryTile}>
           <Text style={styles.summaryLabel}>INVESTED ASSETS</Text>
@@ -90,4 +92,3 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.ink, fontSize: 11, outlineStyle: 'none' } as never,
 });
-

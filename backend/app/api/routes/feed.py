@@ -5,10 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_app_settings, get_current_user_id, get_db
-from app.api.schemas import EventSummary, FeedResponse, MorningDebriefResponse
+from app.api.schemas import (
+    EventSummary,
+    FeedResponse,
+    MorningDebriefResponse,
+    NewsRefreshResponse,
+)
 from app.config import Settings
 from app.services.dashboard import get_event, get_feed, mark_event_read
 from app.services.debrief import build_morning_debrief
+from app.services.news_sync import sync_portfolio_news
 
 router = APIRouter(prefix="/feed", tags=["feed"])
 
@@ -45,6 +51,25 @@ async def morning_debrief(
         generated_at=generated_at,
         available=summary is not None,
         summary=summary,
+    )
+
+
+@router.post("/refresh", response_model=NewsRefreshResponse)
+async def refresh_news(
+    session: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+) -> NewsRefreshResponse:
+    summary = await sync_portfolio_news(session, user_id=user_id, settings=settings)
+    return NewsRefreshResponse(
+        held_symbols=summary.held_symbols,
+        fetched=summary.fetched,
+        normalized=summary.normalized,
+        rejected=summary.rejected,
+        duplicates_skipped=summary.duplicates_skipped,
+        inserted=summary.inserted,
+        providers=summary.providers,
+        warnings=summary.warnings,
     )
 
 

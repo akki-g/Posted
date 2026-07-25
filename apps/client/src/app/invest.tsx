@@ -1,11 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { Eye, EyeOff, RefreshCw, Settings2 } from 'lucide-react-native';
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Settings2,
+  UserRoundSearch,
+} from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { HoldingsList } from '@/components/HoldingsList';
+import { MarketSearch } from '@/components/MarketSearch';
 import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
@@ -70,6 +78,21 @@ export default function InvestScreen() {
           {dashboard.data.portfolio.demo_mode ? (
             <DemoBanner message="Sample investments. Connect Schwab in Settings, then sync to replace them." />
           ) : null}
+
+          <MarketSearch />
+
+          <Pressable onPress={() => router.push('/insiders')} style={styles.insiderLink}>
+            <View style={styles.insiderLinkIcon}>
+              <UserRoundSearch size={18} color={colors.tealDark} />
+            </View>
+            <View style={styles.insiderLinkCopy}>
+              <Text style={styles.insiderLinkTitle}>Insider activity & sentiment</Text>
+              <Text style={styles.insiderLinkText}>
+                Track reported transactions, monthly MSPR, and portfolio-aware AI analysis.
+              </Text>
+            </View>
+            <ArrowRight size={16} color={colors.tealDark} />
+          </Pressable>
 
           <View style={styles.hero}>
             <Text style={styles.heroLabel}>TOTAL PORTFOLIO</Text>
@@ -175,6 +198,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  insiderLink: {
+    minHeight: 70,
+    borderWidth: 1,
+    borderColor: '#A6D9D9',
+    backgroundColor: colors.tealSoft,
+    padding: 13,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  insiderLinkIcon: {
+    width: 38,
+    height: 38,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insiderLinkCopy: { flex: 1, minWidth: 0 },
+  insiderLinkTitle: { color: colors.tealDark, fontSize: 12, fontWeight: '800' },
+  insiderLinkText: { color: colors.tealDark, fontSize: 9, lineHeight: 14, marginTop: 3 },
   hero: {
     backgroundColor: colors.navy,
     borderRadius: 16,

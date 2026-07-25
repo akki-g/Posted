@@ -31,6 +31,8 @@ class RejectionReason(StrEnum):
 
 class EventProvider(StrEnum):
     SEC = "sec"
+    ALPACA = "alpaca"
+    FINNHUB = "finnhub"
     OPENBB = "openbb"
     BENZINGA = "benzinga"
     FMP = "fmp"

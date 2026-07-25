@@ -6,6 +6,7 @@ so a missing key or a flaky API call never breaks a sync or a page load.
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 import structlog
 from anthropic import APIError, AsyncAnthropic
@@ -75,6 +76,99 @@ async def generate_event_insight(
         )
     except APIError as exc:
         logger.warning("ai_event_insight_failed", error=str(exc))
+        return None
+
+    text = "".join(
+        block.text for block in response.content if getattr(block, "type", None) == "text"
+    ).strip()
+    return text or None
+
+
+async def generate_insider_insight(
+    *,
+    symbol: str,
+    company_name: str,
+    summary: dict[str, Any],
+    transactions: list[dict[str, Any]],
+    sentiment: list[dict[str, Any]],
+    day_change_percent: float,
+    one_month_price_change_percent: float | None,
+    position: dict[str, Any] | None,
+    recent_news: list[str],
+    settings: Settings,
+) -> str | None:
+    """Return a rigorous, portfolio-aware interpretation of reported insider activity."""
+
+    client = _client(settings)
+    if client is None:
+        return None
+
+    transaction_context = "\n".join(
+        (
+            f"- {item['transaction_date']}: {item['name']}, code {item['transaction_code']}, "
+            f"share change {item['shares_changed']}, price {item['transaction_price']}, "
+            f"derivative={item['is_derivative']}"
+        )
+        for item in transactions[:12]
+    ) or "No recent transaction rows were returned."
+    sentiment_context = "\n".join(
+        (
+            f"- {item['year']}-{int(item['month']):02d}: "
+            f"MSPR {float(item['mspr']):+.2f}, net share change {item['change']}"
+        )
+        for item in sentiment[-6:]
+    ) or "No monthly MSPR history was returned."
+    news_context = "\n".join(f"- {headline}" for headline in recent_news[:4]) or (
+        "No ticker-linked news is available in Posted's normalized event store."
+    )
+    position_context = (
+        (
+            f"User owns {position['quantity']} shares worth ${position['market_value']:,.2f}; "
+            f"portfolio weight {position['portfolio_weight']:.2f}%; "
+            f"total return {position['total_gain_percent']:+.2f}%."
+        )
+        if position
+        else "The user does not currently hold this ticker."
+    )
+    one_month_context = (
+        f"{one_month_price_change_percent:+.2f}%"
+        if one_month_price_change_percent is not None
+        else "unavailable"
+    )
+
+    prompt = (
+        "You are a senior portfolio analyst explaining reported corporate-insider activity to "
+        "an individual investor. Write an evidence-dense interpretation between 180 and 280 "
+        "words. Use exactly these five plain-text labels, each followed by a short paragraph: "
+        "'Bottom line:', 'What the filings show:', 'Movement context:', "
+        "'Portfolio relevance:', and 'What to watch:'.\n\n"
+        "Use only the supplied facts. Open-market purchase code P and sale code S can carry "
+        "directional information. Awards, gifts, tax withholding, and option exercises are "
+        "often compensation or administrative activity; do not count them as equivalent to "
+        "discretionary purchases or sales. Explain the latest MSPR and its multi-month trend, "
+        "but state that it is a context signal rather than a forecast. Do not claim insider "
+        "activity caused a stock move merely because the dates overlap. Mention filing lag, "
+        "possible 10b5-1 plans, and missing motive data when relevant. Never recommend buying, "
+        "selling, or holding, and never predict price direction. Avoid generic filler; tie every "
+        "paragraph to the actual values below.\n\n"
+        f"Ticker: {symbol} — {company_name}\n"
+        f"Deterministic summary: {summary}\n"
+        f"Current day move: {day_change_percent:+.2f}%\n"
+        f"One-month price move: {one_month_context}\n"
+        f"User context: {position_context}\n\n"
+        f"Recent transaction filings:\n{transaction_context}\n\n"
+        f"Recent monthly insider sentiment:\n{sentiment_context}\n\n"
+        f"Recent ticker-linked news:\n{news_context}\n"
+    )
+
+    try:
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=900,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except APIError as exc:
+        logger.warning("ai_insider_insight_failed", symbol=symbol, error=str(exc))
         return None
 
     text = "".join(

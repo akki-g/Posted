@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, X } from 'lucide-react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ExternalLink, RefreshCw, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
@@ -15,6 +15,7 @@ export default function NewsScreen() {
   useEffect(() => setAssistantSection('investing'), []);
   const { width } = useWindowDimensions();
   const desktop = width >= 920;
+  const queryClient = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const feed = useQuery({ queryKey: ['feed', 'news-tab'], queryFn: () => api.feed('?limit=100') });
@@ -23,9 +24,24 @@ export default function NewsScreen() {
     queryFn: () => api.event(selectedId!),
     enabled: Boolean(selectedId),
   });
+  const refreshNews = useMutation({
+    mutationFn: api.refreshNews,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['feed'] });
+    },
+  });
+
+  const refresh = async () => {
+    await refreshNews.mutateAsync();
+    await feed.refetch();
+  };
 
   return (
-    <AppShell title="News stories" eyebrow="MARKET NEWS">
+    <AppShell
+      title="News stories"
+      eyebrow="MARKET NEWS"
+      onRefresh={() => void refresh()}
+      refreshing={feed.isRefetching || refreshNews.isPending}>
       <Text style={styles.intro}>
         Every story feeding the impact feed. Click one for the full picture: an AI overview,
         what it means for your decisions, and its portfolio impact score.
@@ -33,9 +49,30 @@ export default function NewsScreen() {
       <View style={[styles.layout, !desktop && styles.stack]}>
         <View style={styles.listPanel}>
           <View style={styles.panelHeader}>
-            <Text style={styles.panelTitle}>{feed.data?.total ?? 0} stories</Text>
-            <Text style={styles.panelCaption}>Highest impact first</Text>
+            <View>
+              <Text style={styles.panelTitle}>{feed.data?.total ?? 0} stories</Text>
+              <Text style={styles.panelCaption}>Highest impact first</Text>
+            </View>
+            <Pressable
+              disabled={refreshNews.isPending}
+              onPress={() => void refresh()}
+              style={styles.refreshButton}>
+              <RefreshCw size={13} color={colors.tealDark} />
+              <Text style={styles.refreshText}>
+                {refreshNews.isPending ? 'Refreshing…' : 'Refresh providers'}
+              </Text>
+            </Pressable>
           </View>
+          {refreshNews.data ? (
+            <Text style={styles.syncStatus}>
+              {refreshNews.data.providers.length
+                ? `${refreshNews.data.providers.join(' + ')} · ${refreshNews.data.fetched} fetched · ${refreshNews.data.inserted} new`
+                : refreshNews.data.warnings[0] ?? 'No live news providers configured.'}
+            </Text>
+          ) : null}
+          {refreshNews.isError ? (
+            <Text style={styles.syncError}>{refreshNews.error.message}</Text>
+          ) : null}
           {feed.isLoading ? <LoadingState label="Loading news" /> : null}
           {feed.isError ? (
             <ErrorState message={feed.error.message} retry={() => feed.refetch()} />
@@ -159,12 +196,41 @@ const styles = StyleSheet.create({
   panelHeader: {
     minHeight: 52,
     paddingHorizontal: 16,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
   panelTitle: { color: colors.ink, fontSize: 13, fontWeight: '700' },
   panelCaption: { color: colors.inkFaint, fontSize: 10, marginTop: 2 },
+  refreshButton: {
+    height: 31,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  refreshText: { color: colors.tealDark, fontSize: 9, fontWeight: '700' },
+  syncStatus: {
+    color: colors.tealDark,
+    fontSize: 9,
+    lineHeight: 14,
+    backgroundColor: colors.tealSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
+  syncError: {
+    color: colors.negative,
+    fontSize: 9,
+    lineHeight: 14,
+    backgroundColor: colors.negativeSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
   detailPanel: {
     flex: 1,
     minWidth: 320,

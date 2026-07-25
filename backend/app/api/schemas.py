@@ -138,6 +138,7 @@ class AssistantMessageSummary(APIModel):
 class AssistantChatRequest(APIModel):
     message: str
     section: str = "general"
+    screen_context: str | None = Field(default=None, max_length=1200)
 
 
 class AssistantConversationResponse(APIModel):
