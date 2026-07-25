@@ -66,6 +66,26 @@ SYSTEM_PROMPT = (
     "own line with a number like '1.' rather than a dash or asterisk."
 )
 
+RELIABLE_DOMAINS = [
+    # Wire & financial press
+    "reuters.com", "apnews.com", "bloomberg.com", "wsj.com", "cnbc.com",
+    "ft.com", "marketwatch.com", "barrons.com",
+    # Official / regulatory
+    "sec.gov", "federalreserve.gov", "treasury.gov", "bls.gov",
+    # Newswire distribution — the practical stand-in for "a company's own IR
+    # page", since allowed_domains can't enumerate every ticker's own domain.
+    "businesswire.com", "prnewswire.com", "globenewswire.com", "accesswire.com",
+    # Reference / education
+    "investopedia.com", "morningstar.com", "nerdwallet.com",
+]
+
+WEB_SEARCH_TOOL: dict[str, Any] = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": 5,
+    "allowed_domains": RELIABLE_DOMAINS,
+}
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "get_money_overview",
@@ -141,6 +161,7 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    WEB_SEARCH_TOOL,
 ]
 
 

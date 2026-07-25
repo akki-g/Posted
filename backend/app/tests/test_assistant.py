@@ -99,3 +99,19 @@ def test_assistant_turn_result_sources_defaults_to_empty_list() -> None:
     result = AssistantTurnResult(reply="hi", tool_calls_made=0)
 
     assert result.sources == []
+
+
+from app.services.assistant import RELIABLE_DOMAINS, TOOLS, WEB_SEARCH_TOOL
+
+
+def test_web_search_tool_is_registered_with_the_reliable_domain_allowlist() -> None:
+    assert WEB_SEARCH_TOOL in TOOLS
+    assert WEB_SEARCH_TOOL["type"] == "web_search_20260209"
+    assert WEB_SEARCH_TOOL["name"] == "web_search"
+    assert WEB_SEARCH_TOOL["allowed_domains"] == RELIABLE_DOMAINS
+    assert WEB_SEARCH_TOOL["max_uses"] == 5
+
+
+def test_reliable_domains_has_no_duplicates() -> None:
+    assert len(RELIABLE_DOMAINS) == len(set(RELIABLE_DOMAINS))
+    assert all(domain and "." in domain for domain in RELIABLE_DOMAINS)
