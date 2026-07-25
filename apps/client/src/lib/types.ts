@@ -63,6 +63,7 @@ export type EventSummary = {
   is_demo: boolean;
   reasons: EventReason[];
   securities: EventSecurity[];
+  ai_insight: string | null;
 };
 
 export type DashboardResponse = {
@@ -76,6 +77,22 @@ export type DashboardResponse = {
 
 export type FeedResponse = { items: EventSummary[]; unread_count: number; total: number };
 
+export type MorningDebriefResponse = {
+  generated_at: string;
+  available: boolean;
+  summary: string | null;
+};
+
+export type AssistantMessageSummary = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  section: string | null;
+  created_at: string;
+};
+
+export type AssistantConversationResponse = { messages: AssistantMessageSummary[] };
+
 export type ConnectionStatus = {
   id: string;
   provider: string;
@@ -84,6 +101,13 @@ export type ConnectionStatus = {
   last_synced_at: string | null;
   account_count: number;
   demo_mode: boolean;
+};
+
+export type SchwabStatus = {
+  configured: boolean;
+  demo_mode: boolean;
+  redirect_uri: string;
+  message: string;
 };
 
 export type UserPreferences = {
@@ -153,6 +177,25 @@ export type MoneyConnectionStatus = {
   last_synced_at: string | null;
   account_count: number;
   is_demo: boolean;
+};
+
+export type PlaidLinkTokenResponse = {
+  link_token: string;
+  expiration: string;
+  request_id: string | null;
+};
+
+export type MoneySyncResponse = {
+  connection_id: string;
+  status: string;
+  inserted: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+  replaced_pending: number;
+  normalized: number;
+  rejected: number;
+  synced_at: string;
 };
 
 export type MoneyTransactionsResponse = {

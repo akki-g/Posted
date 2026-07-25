@@ -1,24 +1,24 @@
 # Posted
 
-Posted is a learning-first portfolio and personal-finance intelligence app. The current MVP runs end to end with safe demo data and includes seams for Schwab investments, OpenBB/SEC company intelligence, Plaid bank and card accounts, spending analysis, and recurring-charge detection.
+Posted is a learning-first personal-finance and portfolio app. The mobile MVP supports money management plus read-only Charles Schwab portfolio synchronization, with safe demo data available before connecting providers.
 
 The client is a single Expo/React Native application for web, iOS, and Android. The backend is Python 3.12 with FastAPI, SQLAlchemy asyncio, SQLite for one-command local development, and PostgreSQL support for deployment.
 
 ## What works now
 
-- Responsive portfolio dashboard with balances, performance history, accounts, and positions
-- Searchable impact feed, materiality filters, event explanations, and read state
-- Settings and brokerage connection screens
-- Money overview with cash/card balances, weekly spending, and category analysis
+- Mobile-first money home with cash/card balances, weekly cash flow, categories, and recent activity
 - Searchable bank/card transactions and explainable recurring-charge review
+- Native Plaid Link onboarding plus paginated transaction synchronization and manual refresh
+- Pull-to-refresh behavior on the core money screens
+- Mobile Investing tab with Schwab accounts, balances, holdings, gains, privacy mode, and manual sync
 - Seeded demo portfolio, idempotent demo sync, and typed REST API
-- Schwab OAuth authorize/callback plumbing with signed state and encrypted token storage
+- Schwab OAuth, encrypted token storage, automatic access-token refresh, and complete-snapshot reconciliation
 - OpenBB news and Schwab account adapters behind provider-neutral contracts
-- Plaid Link/account/transaction-sync backend seams with encrypted credential storage
+- Plaid Link/account/transaction sync with encrypted credential storage and cursor-safe reconciliation
 - Dockerized PostgreSQL/API option
 - Agent-owned test suite plus executable specifications for nine learning files
 
-Live ingestion intentionally does not bypass the human-owned domain modules. Until the relevant implementations pass their specifications, demo data remains the active end-to-end path.
+All nine provider-neutral domain modules now pass their executable specifications. Live Schwab and Plaid data runs through the same normalization and reconciliation rules used by the demo/test paths.
 
 ## Quick start
 
@@ -36,7 +36,18 @@ In a second terminal:
 make client
 ```
 
-Then press `w` for web, `i` for iOS Simulator, or `a` for an Android emulator. The web app is normally available at `http://localhost:8081`; API documentation is at `http://127.0.0.1:8000/docs`.
+Then press `w` for web. The web app is normally available at `http://localhost:8081`; API documentation is at `http://127.0.0.1:8000/docs`.
+
+The native Plaid SDK does not run in Expo Go. For the mobile app, create a custom native development build instead:
+
+```bash
+cd apps/client
+npm run dev:ios
+# or
+npm run dev:android
+```
+
+For an installable EAS development build, run `npx eas-cli build --profile development --platform ios` (or `android`). App-store builds use the included `production` profile, but still require your Apple/Google signing accounts and production API URL.
 
 For a physical phone, copy `apps/client/.env.example` to `apps/client/.env` and replace the sample IP with your computer's LAN address. Android Emulator automatically uses `10.0.2.2`; web and iOS Simulator use `127.0.0.1`.
 
@@ -63,7 +74,7 @@ Their public contracts live in `backend/app/domain/models.py`. Run the normal su
 make learning-check
 ```
 
-Those tests are expected to fail until you implement each exercise. Work in the order shown above—the orchestrator composes the other four.
+All nine files are implemented. Keep `make learning-check` green when changing their invariants.
 
 Start with the [learning roadmap](guides/00-LEARNING-ROADMAP.md), then use the focused guides:
 
@@ -77,6 +88,7 @@ Start with the [learning roadmap](guides/00-LEARNING-ROADMAP.md), then use the f
 - [Spending classification](guides/08-SPENDING-CLASSIFICATION.md)
 - [Recurring transaction detection](guides/09-RECURRING-TRANSACTIONS.md)
 - [Plaid and FinanceKit setup](guides/10-BANKING-CONNECTORS.md)
+- [Schwab MVP setup and testing](guides/11-SCHWAB-MVP-TESTING.md)
 - [Learning companion](guides/POSTED-LEARNING-COMPANION.md)
 
 ## Architecture
@@ -112,7 +124,7 @@ cd backend
 uv sync --extra openbb
 ```
 
-Add the desired provider key to `.env`; the adapter defaults to OpenBB's `yfinance` provider for development. For Schwab, register the exact callback URL shown in `.env.example`, then set `SCHWAB_CLIENT_ID`, `SCHWAB_CLIENT_SECRET`, and a long random `APP_SECRET`. Never commit `.env`.
+Add the desired provider key to `.env`; the adapter defaults to OpenBB's `yfinance` provider for development. For Schwab, use the exact callback URL approved for your app, then follow [the Schwab MVP testing guide](guides/11-SCHWAB-MVP-TESTING.md). Never commit `.env`.
 
 For banking, start with Plaid Sandbox variables in `.env`; follow [the connector guide](guides/10-BANKING-CONNECTORS.md). Plaid's native Link SDK requires a custom Expo development build rather than Expo Go. Apple FinanceKit is a later, separately entitled iOS integration and is not a universal Apple Pay subscription ledger.
 

@@ -21,6 +21,7 @@ from app.api.schemas import (
     PortfolioSummary,
     SyncAccepted,
 )
+from app.config import Settings
 from app.db.models import (
     BrokerageAccount,
     BrokerageConnection,
@@ -31,6 +32,7 @@ from app.db.models import (
     Security,
     SyncRun,
 )
+from app.services.ai_insights import generate_event_insight
 
 ZERO = Decimal("0")
 
@@ -52,7 +54,7 @@ async def get_connections(
             status=item.status,
             last_synced_at=item.last_synced_at,
             account_count=len(item.accounts),
-            demo_mode=demo_mode,
+            demo_mode=item.status == "demo",
         )
         for item in result.unique().all()
     ]
@@ -153,6 +155,7 @@ def _event_schema(event: MarketEvent) -> EventSummary:
             )
             for link in event.securities
         ],
+        ai_insight=event.ai_insight,
     )
 
 
@@ -163,11 +166,14 @@ async def get_feed(
     level: str | None = None,
     unread_only: bool = False,
     limit: int = 50,
+    include_demo: bool = True,
 ) -> FeedResponse:
     # The MVP database is user-seeded and events link only to the current user's securities.
     # Keep the ownership check in the route/service boundary and replace this query when
     # multi-user event subscriptions are introduced.
     query = select(MarketEvent)
+    if not include_demo:
+        query = query.where(MarketEvent.is_demo.is_(False))
     if level:
         query = query.where(MarketEvent.level == level)
     if unread_only:
@@ -187,13 +193,34 @@ async def get_feed(
     )
 
 
-async def get_event(session: AsyncSession, *, event_id: UUID) -> EventSummary | None:
+async def get_event(
+    session: AsyncSession, *, event_id: UUID, settings: Settings | None = None
+) -> EventSummary | None:
     event = await session.scalar(
         select(MarketEvent)
         .where(MarketEvent.id == event_id)
         .options(selectinload(MarketEvent.securities).selectinload(EventSecurityLink.security))
     )
-    return _event_schema(event) if event else None
+    if event is None:
+        return None
+
+    if event.ai_insight is None and settings is not None:
+        affected_holdings = [
+            (link.security.symbol, float(link.effective_weight)) for link in event.securities
+        ]
+        insight = await generate_event_insight(
+            headline=event.headline,
+            summary=event.summary,
+            level=event.level,
+            score=float(event.score),
+            affected_holdings=affected_holdings,
+            settings=settings,
+        )
+        if insight is not None:
+            event.ai_insight = insight
+            await session.commit()
+
+    return _event_schema(event)
 
 
 async def mark_event_read(session: AsyncSession, *, event_id: UUID) -> bool:
@@ -228,7 +255,13 @@ async def get_dashboard(
     history = history_result.all()
     accounts = await get_accounts(session, user_id=user_id)
     holdings = await get_holdings(session, user_id=user_id)
-    feed = await get_feed(session, user_id=user_id, limit=4)
+    active_demo_mode = connection.status == "demo" if connection else demo_mode
+    feed = await get_feed(
+        session,
+        user_id=user_id,
+        limit=4,
+        include_demo=active_demo_mode,
+    )
 
     if snapshot is None:
         summary = PortfolioSummary(
@@ -237,7 +270,7 @@ async def get_dashboard(
             total_gain=MoneyMovement(amount=ZERO, percent=ZERO),
             last_synced_at=connection.last_synced_at if connection else None,
             connection_status=connection.status if connection else "not_connected",
-            demo_mode=demo_mode,
+            demo_mode=active_demo_mode,
         )
     else:
         summary = PortfolioSummary(
@@ -252,7 +285,7 @@ async def get_dashboard(
             ),
             last_synced_at=connection.last_synced_at if connection else None,
             connection_status=connection.status if connection else "not_connected",
-            demo_mode=demo_mode,
+            demo_mode=active_demo_mode,
         )
 
     return DashboardResponse(

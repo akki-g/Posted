@@ -7,15 +7,29 @@ import type { EventSummary } from '@/lib/types';
 import { colors } from '@/theme/tokens';
 import { LevelPill } from './ui';
 
-export function EventList({ events }: { events: EventSummary[] }) {
+type Props = {
+  events: EventSummary[];
+  onSelect?: (id: string) => void;
+  selectedId?: string;
+};
+
+export function EventList({ events, onSelect, selectedId }: Props) {
   const router = useRouter();
   return (
     <View>
       {events.map((event) => (
         <Pressable
           key={event.id}
-          onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } })}
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+          onPress={() =>
+            onSelect
+              ? onSelect(event.id)
+              : router.push({ pathname: '/event/[id]', params: { id: event.id } })
+          }
+          style={({ pressed }) => [
+            styles.row,
+            pressed && styles.rowPressed,
+            event.id === selectedId && styles.rowSelected,
+          ]}>
           <View style={[styles.scoreRail, railStyle[event.level]]} />
           <View style={styles.body}>
             <View style={styles.metaRow}>
@@ -24,6 +38,11 @@ export function EventList({ events }: { events: EventSummary[] }) {
               {event.unread ? <View style={styles.unreadDot} /> : null}
             </View>
             <Text style={styles.headline}>{event.headline}</Text>
+            {event.ai_insight ? (
+              <Text style={styles.aiInsight} numberOfLines={2}>
+                {event.ai_insight}
+              </Text>
+            ) : null}
             <View style={styles.footerRow}>
               <Text style={styles.symbols}>{event.securities.map((item) => item.symbol).join(', ')}</Text>
               <Text style={styles.source}>{event.source_name}</Text>
@@ -58,12 +77,14 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   rowPressed: { backgroundColor: '#F8F9FA' },
+  rowSelected: { backgroundColor: colors.tealSoft },
   scoreRail: { width: 3, alignSelf: 'stretch' },
   body: { flex: 1, minWidth: 0, paddingHorizontal: 14, paddingVertical: 14 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   time: { color: colors.inkFaint, fontSize: 10 },
   unreadDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.teal },
   headline: { color: colors.ink, fontSize: 13, lineHeight: 18, fontWeight: '600', marginTop: 9 },
+  aiInsight: { color: colors.tealDark, fontSize: 11, lineHeight: 16, marginTop: 6, fontStyle: 'italic' },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   symbols: { color: colors.tealDark, fontSize: 10, fontWeight: '800', letterSpacing: 0.4 },
   source: { color: colors.inkFaint, fontSize: 10, flexShrink: 1 },

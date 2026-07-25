@@ -25,6 +25,9 @@ export default function RootLayout() {
           <Stack.Screen name="money" />
           <Stack.Screen name="transactions" />
           <Stack.Screen name="subscriptions" />
+          <Stack.Screen name="invest" />
+          <Stack.Screen name="news" />
+          <Stack.Screen name="assistant" />
           <Stack.Screen name="event/[id]" />
         </Stack>
       </QueryClientProvider>

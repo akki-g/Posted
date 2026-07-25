@@ -14,6 +14,12 @@ async def client() -> AsyncIterator[AsyncClient]:
         app_env="test",
         database_url="sqlite+aiosqlite:///:memory:",
         demo_mode=True,
+        schwab_client_id=None,
+        schwab_client_secret=None,
+        plaid_client_id=None,
+        plaid_secret=None,
+        plaid_environment="sandbox",
+        anthropic_api_key=None,
     )
     app = create_app(settings)
     async with (

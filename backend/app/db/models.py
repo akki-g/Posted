@@ -272,6 +272,7 @@ class MarketEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unread: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reasons: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list, nullable=False)
+    ai_insight: Mapped[str | None] = mapped_column(Text)
 
     securities: Mapped[list["EventSecurityLink"]] = relationship(
         back_populates="event", cascade="all, delete-orphan"
@@ -292,6 +293,16 @@ class EventSecurityLink(Base):
 
     event: Mapped[MarketEvent] = relationship(back_populates="securities")
     security: Mapped[Security] = relationship()
+
+
+class AssistantMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "assistant_messages"
+    __table_args__ = (Index("ix_assistant_messages_user_time", "user_id", "created_at"),)
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str | None] = mapped_column(String(16))
 
 
 class Alert(UUIDPrimaryKeyMixin, TimestampMixin, Base):

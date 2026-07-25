@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.config import Settings, get_settings
 from app.db.base import Base
-from app.db.seed import seed_demo_data
+from app.db.seed import ensure_local_user, seed_demo_data
 from app.db.session import create_engine, create_session_factory
 from app.logging import configure_logging
 
@@ -27,6 +27,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.demo_mode:
             async with session_factory() as session:
                 await seed_demo_data(session, settings)
+        else:
+            async with session_factory() as session:
+                await ensure_local_user(session, settings)
         logger.info("application_started", environment=settings.app_env)
         yield
         await engine.dispose()

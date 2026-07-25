@@ -23,16 +23,18 @@ from app.db.models import (
     MoneyTransactionRecord,
     RecurringStream,
 )
+from app.money.enums import (
+    MoneyAccountType,
+    RecurrenceFrequency,
+    SpendingTreatment,
+    TransactionDirection,
+    TransactionSource,
+    TransactionStatus,
+)
+from app.money.models import StoredMoneyTransaction
+from app.money.spending import summarize_weekly_spending
 
 ZERO = Decimal("0")
-EXCLUDED_SPENDING_CATEGORIES = {
-    "CREDIT_CARD_PAYMENT",
-    "INTERNAL_TRANSFER",
-    "INVESTMENT_TRANSFER",
-    "LOAN_PAYMENTS",
-    "TRANSFER_IN",
-    "TRANSFER_OUT",
-}
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -73,6 +75,38 @@ def _transaction_schema(transaction: MoneyTransactionRecord) -> MoneyTransaction
     )
 
 
+def _account_type(value: str) -> MoneyAccountType:
+    try:
+        return MoneyAccountType(value)
+    except ValueError:
+        return MoneyAccountType.OTHER
+
+
+def _stored_transaction(transaction: MoneyTransactionRecord) -> StoredMoneyTransaction:
+    """Restore the pure money-domain record from its SQLAlchemy representation."""
+
+    return StoredMoneyTransaction(
+        transaction_id=transaction.id,
+        account_id=transaction.account_id,
+        account_type=_account_type(transaction.account.account_type),
+        source=TransactionSource(transaction.source),
+        provider_transaction_id=transaction.provider_transaction_id,
+        pending_provider_transaction_id=transaction.pending_provider_transaction_id,
+        status=TransactionStatus(transaction.status),
+        direction=TransactionDirection(transaction.direction),
+        amount=transaction.amount,
+        currency=transaction.currency,
+        merchant_name=transaction.merchant_name,
+        description=transaction.description,
+        occurred_at=_as_utc(transaction.occurred_at),
+        posted_at=_as_utc(transaction.posted_at) if transaction.posted_at else None,
+        category_primary=transaction.category_primary,
+        category_detailed=transaction.category_detailed,
+        payment_channel=transaction.payment_channel,
+        fingerprint=transaction.fingerprint,
+    )
+
+
 def _recurring_schema(stream: RecurringStream) -> RecurringStreamSummary:
     return RecurringStreamSummary(
         id=stream.id,
@@ -86,6 +120,23 @@ def _recurring_schema(stream: RecurringStream) -> RecurringStreamSummary:
         confidence=stream.confidence,
         status=stream.status,
     )
+
+
+def _monthly_equivalent(stream: RecurringStreamSummary) -> Decimal:
+    """Convert different billing cadences into one comparable monthly commitment."""
+
+    multipliers = {
+        RecurrenceFrequency.WEEKLY: Decimal("52") / Decimal("12"),
+        RecurrenceFrequency.BIWEEKLY: Decimal("26") / Decimal("12"),
+        RecurrenceFrequency.MONTHLY: Decimal("1"),
+        RecurrenceFrequency.QUARTERLY: Decimal("1") / Decimal("3"),
+        RecurrenceFrequency.ANNUAL: Decimal("1") / Decimal("12"),
+    }
+    try:
+        frequency = RecurrenceFrequency(stream.frequency)
+    except ValueError:
+        return ZERO
+    return stream.average_amount * multipliers[frequency]
 
 
 async def get_money_accounts(session: AsyncSession, *, user_id: UUID) -> list[MoneyAccountSummary]:
@@ -196,38 +247,43 @@ async def get_money_overview(
     subscriptions = await get_recurring_streams(session, user_id=user_id)
     connections = await get_money_connections(session, user_id=user_id)
 
-    weekly_transactions = [
-        transaction
-        for transaction in transaction_result.items
-        if _as_utc(transaction.occurred_at) >= period_start and transaction.status == "posted"
-    ]
+    record_result = await session.scalars(
+        select(MoneyTransactionRecord)
+        .join(FinancialAccount)
+        .join(FinancialConnection)
+        .where(FinancialConnection.user_id == user_id)
+        .options(selectinload(MoneyTransactionRecord.account))
+        .order_by(MoneyTransactionRecord.occurred_at.desc(), MoneyTransactionRecord.id)
+        .limit(500)
+    )
+    records = list(record_result.all())
+    stored = tuple(_stored_transaction(record) for record in records)
+    weekly_summary = summarize_weekly_spending(
+        stored,
+        period_start=period_start,
+        period_end=now,
+    )
+    treatments = {
+        decision.transaction_id: decision.treatment for decision in weekly_summary.decisions
+    }
     spendable = [
-        transaction
-        for transaction in weekly_transactions
-        if transaction.direction == "outflow"
-        and not transaction.is_transfer
-        and transaction.category not in EXCLUDED_SPENDING_CATEGORIES
+        record for record in records if treatments.get(record.id) is SpendingTreatment.SPENDING
     ]
-    income = [
-        transaction
-        for transaction in weekly_transactions
-        if transaction.direction == "inflow" and not transaction.is_transfer
-    ]
-    weekly_spending = sum((item.amount for item in spendable), ZERO)
-    weekly_income = sum((item.amount for item in income), ZERO)
 
     category_totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
     day_totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for transaction in spendable:
-        category_totals[transaction.category] += transaction.amount
-        day_totals[transaction.occurred_at.date().isoformat()] += transaction.amount
+        category_totals[transaction.category_primary] += transaction.amount
+        day_totals[_as_utc(transaction.occurred_at).date().isoformat()] += transaction.amount
 
     category_summaries = [
         SpendingCategorySummary(
             category=category,
             label=category.replace("_", " ").title(),
             amount=amount,
-            percent=(amount / weekly_spending * Decimal("100")) if weekly_spending else ZERO,
+            percent=(amount / weekly_summary.total_spending * Decimal("100"))
+            if weekly_summary.total_spending
+            else ZERO,
         )
         for category, amount in sorted(
             category_totals.items(), key=lambda item: (-item[1], item[0])
@@ -253,14 +309,14 @@ async def get_money_overview(
         (account.current_balance for account in accounts if account.account_type == "credit_card"),
         ZERO,
     )
-    monthly_recurring = sum((stream.average_amount for stream in subscriptions), ZERO)
+    monthly_recurring = sum((_monthly_equivalent(stream) for stream in subscriptions), ZERO)
 
     return MoneyOverviewResponse(
         cash_balance=cash_balance,
         card_balance=card_balance,
         net_cash_position=cash_balance - card_balance,
-        weekly_spending=weekly_spending,
-        weekly_income=weekly_income,
+        weekly_spending=weekly_summary.total_spending,
+        weekly_income=weekly_summary.total_income,
         monthly_recurring=monthly_recurring,
         annualized_recurring=monthly_recurring * Decimal("12"),
         last_synced_at=max(

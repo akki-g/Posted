@@ -23,12 +23,30 @@ class SchwabTraderClient:
         reraise=True,
     )
     async def get_accounts_with_positions(self) -> list[dict[str, Any]]:
+        return await self._get("/accounts", params={"fields": "positions"})
+
+    async def get_account_numbers(self) -> list[dict[str, Any]]:
+        """Return Schwab's account-number to opaque-hash mapping.
+
+        Posted persists the opaque hash as the provider account identifier. The
+        full brokerage account number is used only in memory to join the two
+        Schwab responses.
+        """
+
+        return await self._get("/accounts/accountNumbers")
+
+    async def _get(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         owns_client = self._http is None
         client = self._http or httpx.AsyncClient(timeout=20)
         try:
             response = await client.get(
-                f"{TRADER_BASE_URL}/accounts",
-                params={"fields": "positions"},
+                f"{TRADER_BASE_URL}{path}",
+                params=params,
                 headers={
                     "Authorization": f"Bearer {self._access_token}",
                     "Accept": "application/json",
@@ -37,7 +55,9 @@ class SchwabTraderClient:
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, list):
-                raise ValueError("Schwab accounts response must be a list")
+                raise ValueError("Schwab response must be a list")
+            if not all(isinstance(item, dict) for item in payload):
+                raise ValueError("Schwab response contains a non-object item")
             return payload
         finally:
             if owns_client:

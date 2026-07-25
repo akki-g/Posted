@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 
 import type {
+  AssistantConversationResponse,
+  AssistantMessageSummary,
   ConnectionStatus,
   DashboardResponse,
   EventSummary,
@@ -9,7 +11,11 @@ import type {
   MoneyConnectionStatus,
   MoneyOverviewResponse,
   MoneyTransactionsResponse,
+  MoneySyncResponse,
+  MorningDebriefResponse,
+  PlaidLinkTokenResponse,
   RecurringStreamSummary,
+  SchwabStatus,
   UserPreferences,
 } from './types';
 
@@ -45,9 +51,11 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/dashboard'),
   holdings: () => request<HoldingSummary[]>('/holdings'),
   feed: (query = '') => request<FeedResponse>(`/feed${query}`),
+  morningDebrief: () => request<MorningDebriefResponse>('/feed/debrief'),
   event: (id: string) => request<EventSummary>(`/feed/${id}`),
   markRead: (id: string) => request<void>(`/feed/${id}/read`, { method: 'POST' }),
   connections: () => request<ConnectionStatus[]>('/connections'),
+  schwabStatus: () => request<SchwabStatus>('/connections/schwab/status'),
   authorizeSchwab: () =>
     request<{ authorization_url: string }>('/connections/schwab/authorize'),
   preferences: () => request<UserPreferences>('/settings'),
@@ -73,4 +81,23 @@ export const api = {
     request<{ configured: boolean; environment: string; demo_mode: boolean; message: string }>(
       '/money/connections/plaid/status',
     ),
+  plaidLinkToken: () =>
+    request<PlaidLinkTokenResponse>('/money/connections/plaid/link-token', { method: 'POST' }),
+  exchangePlaidToken: (publicToken: string) =>
+    request<MoneyConnectionStatus>('/money/connections/plaid/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ public_token: publicToken }),
+    }),
+  syncMoneyConnection: (connectionId: string) =>
+    request<MoneySyncResponse>(`/money/connections/plaid/${connectionId}/sync`, {
+      method: 'POST',
+    }),
+  assistantConversation: () => request<AssistantConversationResponse>('/assistant/messages'),
+  sendAssistantMessage: (message: string, section: string) =>
+    request<AssistantMessageSummary>('/assistant/messages', {
+      method: 'POST',
+      body: JSON.stringify({ message, section }),
+    }),
+  clearAssistantConversation: () =>
+    request<void>('/assistant/messages', { method: 'DELETE' }),
 };

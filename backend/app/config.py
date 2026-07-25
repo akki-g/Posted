@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     openbb_fmp_api_key: str | None = None
     openbb_benzinga_api_key: str | None = None
     openbb_intrinio_api_key: str | None = None
+    openbb_news_provider: str = "yfinance"
     sec_user_agent: str = "Posted contact@example.com"
+    anthropic_api_key: str | None = None
 
     @field_validator("frontend_origins", mode="before")
     @classmethod
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
     @property
     def plaid_configured(self) -> bool:
         return bool(self.plaid_client_id and self.plaid_secret)
+
+    @property
+    def ai_insights_configured(self) -> bool:
+        return bool(self.anthropic_api_key)
 
 
 @lru_cache

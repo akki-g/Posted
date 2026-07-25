@@ -28,6 +28,25 @@ def demo_id(name: str) -> UUID:
     return uuid5(NAMESPACE_URL, f"https://posted.local/demo/{name}")
 
 
+async def ensure_local_user(session: AsyncSession, settings: Settings) -> None:
+    """Create the single local MVP user when demo fixtures are disabled.
+
+    Real multi-user deployment must replace the development header/user fallback
+    with authentication before exposing the API publicly.
+    """
+
+    if await session.get(User, settings.dev_user_id) is not None:
+        return
+    session.add(
+        User(
+            id=settings.dev_user_id,
+            email="local@posted.app",
+            display_name="Posted User",
+        )
+    )
+    await session.commit()
+
+
 async def seed_demo_data(session: AsyncSession, settings: Settings) -> None:
     existing = await session.scalar(select(func.count(User.id)))
     if existing:

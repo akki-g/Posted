@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { ArrowRight, Eye, EyeOff, RefreshCw } from 'lucide-react-native';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { EventList } from '@/components/EventList';
@@ -10,10 +10,20 @@ import { HoldingsList } from '@/components/HoldingsList';
 import { PortfolioChart } from '@/components/PortfolioChart';
 import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
+import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
 import { colors } from '@/theme/tokens';
 
 export default function DashboardScreen() {
+  if (Platform.OS !== 'web') {
+    return <Redirect href="/money" />;
+  }
+
+  return <PortfolioDashboard />;
+}
+
+function PortfolioDashboard() {
+  useEffect(() => setAssistantSection('investing'), []);
   const { width } = useWindowDimensions();
   const desktop = width >= 1080;
   const router = useRouter();
@@ -21,6 +31,7 @@ export default function DashboardScreen() {
   const [privateMode, setPrivateMode] = useState(false);
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
+  const debrief = useQuery({ queryKey: ['morning-debrief'], queryFn: api.morningDebrief });
   const sync = useMutation({
     mutationFn: async () => {
       const connection = connections.data?.[0];
@@ -65,6 +76,13 @@ export default function DashboardScreen() {
       {dashboard.data ? (
         <>
           {dashboard.data.portfolio.demo_mode ? <DemoBanner /> : null}
+
+          {debrief.data?.available && debrief.data.summary ? (
+            <View style={styles.debriefCard}>
+              <Text style={styles.debriefKicker}>MORNING DEBRIEF · AI</Text>
+              <Text style={styles.debriefText}>{debrief.data.summary}</Text>
+            </View>
+          ) : null}
 
           <View style={[styles.metrics, !desktop && styles.metricsWrapped]}>
             <View style={[styles.metricCard, styles.primaryMetric]}>
@@ -181,6 +199,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 4,
   },
+  debriefCard: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.tealSoft,
+    padding: 16,
+    marginBottom: 16,
+  },
+  debriefKicker: { color: colors.tealDark, fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  debriefText: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 8 },
   metrics: { flexDirection: 'row', marginBottom: 16, gap: 1, backgroundColor: colors.line },
   metricsWrapped: { flexWrap: 'wrap', gap: 1 },
   metricCard: {

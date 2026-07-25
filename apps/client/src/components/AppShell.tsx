@@ -1,19 +1,22 @@
 import { usePathname, useRouter } from 'expo-router';
 import {
   Bell,
-  ChartNoAxesCombined,
   Landmark,
   LayoutDashboard,
+  MessageSquare,
   Newspaper,
   ReceiptText,
   Repeat2,
+  Rss,
   Settings,
+  TrendingUp,
   WalletCards,
 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import {
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,6 +35,9 @@ type AppPath =
   | '/money'
   | '/transactions'
   | '/subscriptions'
+  | '/invest'
+  | '/news'
+  | '/assistant'
   | '/settings';
 
 type NavItem = {
@@ -43,6 +49,7 @@ type NavItem = {
 const portfolioNav: NavItem[] = [
   { label: 'Portfolio overview', href: '/', icon: LayoutDashboard },
   { label: 'Impact feed', href: '/feed', icon: Newspaper },
+  { label: 'News', href: '/news', icon: Rss },
   { label: 'Holdings', href: '/holdings', icon: WalletCards },
 ];
 
@@ -52,11 +59,16 @@ const moneyNav: NavItem[] = [
   { label: 'Subscriptions', href: '/subscriptions', icon: Repeat2 },
 ];
 
+const assistantNav: NavItem[] = [
+  { label: 'Assistant', href: '/assistant', icon: MessageSquare },
+];
+
 const mobileNav: NavItem[] = [
-  { label: 'Overview', href: '/', icon: LayoutDashboard },
-  { label: 'Money', href: '/money', icon: Landmark },
-  { label: 'Feed', href: '/feed', icon: Newspaper },
-  { label: 'Holdings', href: '/holdings', icon: WalletCards },
+  { label: 'Home', href: '/money', icon: Landmark },
+  { label: 'Activity', href: '/transactions', icon: ReceiptText },
+  { label: 'Invest', href: '/invest', icon: TrendingUp },
+  { label: 'Recurring', href: '/subscriptions', icon: Repeat2 },
+  { label: 'Assistant', href: '/assistant', icon: MessageSquare },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
@@ -66,9 +78,19 @@ type Props = {
   children: ReactNode;
   headerAction?: ReactNode;
   scroll?: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 };
 
-export function AppShell({ title, eyebrow, children, headerAction, scroll = true }: Props) {
+export function AppShell({
+  title,
+  eyebrow,
+  children,
+  headerAction,
+  scroll = true,
+  refreshing = false,
+  onRefresh,
+}: Props) {
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
@@ -96,8 +118,9 @@ export function AppShell({ title, eyebrow, children, headerAction, scroll = true
               <BrandMark />
             </View>
             {[
-              { label: 'PORTFOLIO', items: portfolioNav },
               { label: 'MONEY', items: moneyNav },
+              { label: 'INVESTING', items: portfolioNav },
+              { label: 'AI', items: assistantNav },
             ].map((group) => (
               <View key={group.label} style={styles.navGroup}>
                 <Text style={styles.navLabel}>{group.label}</Text>
@@ -133,7 +156,7 @@ export function AppShell({ title, eyebrow, children, headerAction, scroll = true
               <View style={styles.marketStatus}>
                 <View style={styles.statusDot} />
                 <View>
-                  <Text style={styles.marketStatusTitle}>Market data</Text>
+                  <Text style={styles.marketStatusTitle}>Financial data</Text>
                   <Text style={styles.marketStatusCaption}>Demo environment</Text>
                 </View>
               </View>
@@ -158,6 +181,16 @@ export function AppShell({ title, eyebrow, children, headerAction, scroll = true
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
+              refreshControl={
+                onRefresh ? (
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    tintColor={colors.teal}
+                    colors={[colors.teal]}
+                  />
+                ) : undefined
+              }
               showsVerticalScrollIndicator={false}>
               {content}
             </ScrollView>

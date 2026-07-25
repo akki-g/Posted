@@ -91,6 +91,7 @@ class EventSummary(APIModel):
     is_demo: bool
     reasons: list[EventReason]
     securities: list[EventSecurity]
+    ai_insight: str | None = None
 
 
 class DashboardResponse(APIModel):
@@ -106,6 +107,29 @@ class FeedResponse(APIModel):
     items: list[EventSummary]
     unread_count: int
     total: int
+
+
+class MorningDebriefResponse(APIModel):
+    generated_at: datetime
+    available: bool
+    summary: str | None
+
+
+class AssistantMessageSummary(APIModel):
+    id: UUID
+    role: str
+    content: str
+    section: str | None
+    created_at: datetime
+
+
+class AssistantChatRequest(APIModel):
+    message: str
+    section: str = "general"
+
+
+class AssistantConversationResponse(APIModel):
+    messages: list[AssistantMessageSummary]
 
 
 class ConnectionStatus(APIModel):
@@ -202,6 +226,19 @@ class MoneyConnectionStatus(APIModel):
     last_synced_at: datetime | None
     account_count: int
     is_demo: bool
+
+
+class MoneySyncResponse(APIModel):
+    connection_id: UUID
+    status: str
+    inserted: int
+    updated: int
+    deleted: int
+    unchanged: int
+    replaced_pending: int
+    normalized: int
+    rejected: int
+    synced_at: datetime
 
 
 class PlaidLinkTokenResponse(APIModel):

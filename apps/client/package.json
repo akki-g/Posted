@@ -7,6 +7,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
+    "dev:ios": "expo run:ios",
+    "dev:android": "expo run:android",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web"
@@ -14,7 +16,9 @@
   "dependencies": {
     "@tanstack/react-query": "^5.83.0",
     "expo": "~57.0.8",
+    "expo-build-properties": "~57.0.7",
     "expo-constants": "~57.0.7",
+    "expo-dev-client": "~57.0.9",
     "expo-linking": "~57.0.4",
     "expo-router": "~57.0.8",
     "expo-status-bar": "~57.0.1",
@@ -22,13 +26,24 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-plaid-link-sdk": "^13.0.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
-    "react-native-web": "~0.21.0"
+    "react-native-web": "~0.21.0",
+    "react-plaid-link": "^4.2.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-plaid-link-sdk"
+        ]
+      }
+    }
   }
 }

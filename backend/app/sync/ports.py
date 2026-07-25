@@ -1,4 +1,5 @@
-from collections.abc import AsyncContextManager, Sequence
+from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
@@ -59,7 +60,9 @@ class LockLease(Protocol):
 
 
 class DistributedLock(Protocol):
-    def acquire(self, key: str, ttl: timedelta) -> AsyncContextManager[LockLease]: ...
+    def acquire(
+        self, key: str, ttl: timedelta
+    ) -> AbstractAsyncContextManager[LockLease]: ...
 
 
 class UnitOfWork(Protocol):

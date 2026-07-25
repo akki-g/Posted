@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_app_settings, get_current_user_id, get_db
 from app.api.schemas import (
     MoneyConnectionStatus,
+    MoneySyncResponse,
     PlaidExchangeRequest,
     PlaidLinkTokenResponse,
 )
@@ -18,6 +19,7 @@ from app.config import Settings
 from app.db.models import FinancialAccount, FinancialConnection, FinancialCredential
 from app.providers.plaid.client import PlaidClient
 from app.security.vault import TokenVault
+from app.services.plaid_sync import PlaidSyncError, sync_plaid_transactions
 
 router = APIRouter(prefix="/money/connections/plaid", tags=["money connections"])
 
@@ -148,6 +150,95 @@ async def exchange_plaid_public_token(
         last_synced_at=connection.last_synced_at,
         account_count=len(raw_accounts),
         is_demo=False,
+    )
+
+
+@router.post("/{connection_id}/sync", response_model=MoneySyncResponse)
+async def sync_plaid_connection(
+    connection_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+) -> MoneySyncResponse:
+    connection = await session.scalar(
+        select(FinancialConnection).where(
+            FinancialConnection.id == connection_id,
+            FinancialConnection.user_id == user_id,
+            FinancialConnection.provider == "plaid",
+        )
+    )
+    if connection is None or connection.is_demo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plaid connection not found"
+        )
+
+    credential = await session.scalar(
+        select(FinancialCredential).where(FinancialCredential.connection_id == connection.id)
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Plaid connection has no stored credential",
+        )
+
+    client = _plaid_client(settings)
+    try:
+        access_token = TokenVault(settings.app_secret.get_secret_value()).decrypt(
+            credential.access_token_encrypted
+        )
+        raw_accounts = await client.get_accounts(access_token)
+        for raw_account in raw_accounts:
+            provider_account_id = str(raw_account.get("account_id") or "")
+            if not provider_account_id:
+                continue
+            account = await session.scalar(
+                select(FinancialAccount).where(
+                    FinancialAccount.connection_id == connection.id,
+                    FinancialAccount.provider_account_id == provider_account_id,
+                )
+            )
+            if account is None:
+                account = FinancialAccount(
+                    connection_id=connection.id,
+                    provider_account_id=provider_account_id,
+                    **_account_values(raw_account),
+                )
+                session.add(account)
+            else:
+                for name, value in _account_values(raw_account).items():
+                    setattr(account, name, value)
+        await session.flush()
+
+        result = await sync_plaid_transactions(
+            session,
+            connection=connection,
+            access_token=access_token,
+            client=client,
+        )
+    except PlaidSyncError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Plaid transaction synchronization failed.",
+        ) from exc
+
+    return MoneySyncResponse(
+        connection_id=connection.id,
+        status="completed",
+        inserted=result.inserted,
+        updated=result.updated,
+        deleted=result.deleted,
+        unchanged=result.unchanged,
+        replaced_pending=result.replaced_pending,
+        normalized=result.normalized,
+        rejected=result.rejected,
+        synced_at=result.synced_at,
     )
 
 

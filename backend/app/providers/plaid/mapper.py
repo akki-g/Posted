@@ -30,10 +30,14 @@ def map_plaid_transaction(raw: dict[str, Any]) -> TransactionObservation:
         raise ValueError("Plaid transaction has no valid amount") from exc
 
     pending = bool(raw.get("pending"))
-    occurred_at = _timestamp(raw.get("authorized_datetime")) or _timestamp(
-        raw.get("authorized_date")
-    )
     posted_at = _timestamp(raw.get("datetime")) or _timestamp(raw.get("date"))
+    occurred_at = (
+        _timestamp(raw.get("authorized_datetime"))
+        or _timestamp(raw.get("authorized_date"))
+        # Some institutions never populate authorized_date for pending transactions.
+        # date/datetime is still a faithful occurrence time in that case.
+        or (posted_at if pending else None)
+    )
     category = raw.get("personal_finance_category") or {}
     merchant = raw.get("merchant_name")
     description = str(raw.get("name") or merchant or "Unknown transaction")

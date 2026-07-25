@@ -36,9 +36,10 @@ class SchwabCredentialStore:
             )
             self._session.add(credential)
         credential.access_token_encrypted = self._vault.encrypt(tokens.access_token)
-        credential.refresh_token_encrypted = (
-            self._vault.encrypt(tokens.refresh_token) if tokens.refresh_token else None
-        )
+        # Schwab may omit refresh_token on a refresh response. Preserve the
+        # currently stored refresh token instead of accidentally disconnecting.
+        if tokens.refresh_token:
+            credential.refresh_token_encrypted = self._vault.encrypt(tokens.refresh_token)
         credential.token_type = tokens.token_type
         credential.scope = tokens.scope
         credential.expires_at = tokens.expires_at

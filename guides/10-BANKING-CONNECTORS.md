@@ -15,15 +15,14 @@ Use this matrix instead of assuming “a seam exists” means “the flow is com
 | Exchange a public token and store encrypted access token/accounts | Implemented backend endpoint | `app/api/routes/plaid.py` |
 | Call Plaid `/transactions/sync` for one page | Implemented client method | `app/providers/plaid/client.py` |
 | Convert one Plaid transaction payload | Implemented mapper | `app/providers/plaid/mapper.py` |
-| Loop all sync pages, reconcile, persist, and commit cursor | **Not implemented** | requires a background sync service |
+| Loop all sync pages, reconcile, persist, and commit cursor | Implemented for connection/manual sync | `app/services/plaid_sync.py` |
 | Receive and verify Plaid webhooks | **Not implemented** | requires route, verification, and queue |
-| Open native Plaid Link from Expo | **Not installed** | requires native SDK and development build |
+| Open native Plaid Link from Expo | Implemented | `src/components/PlaidLinkButton.native.tsx` |
 | Read FinanceKit data | **Not implemented or entitled** | later iOS-only adapter |
 
-The Money, Transactions, and Subscriptions screens currently read database/demo API data. The
-Settings screen reports Plaid readiness but does not launch Link.
-
-The Expo Plaid Link native UI is intentionally not installed until credentials are available, because adding native code changes the development workflow.
+The native app is money-first: Money, Activity, Recurring, and Settings are its primary tabs.
+Settings launches Link when the backend reports that Plaid credentials are configured. Investing
+remains available on web but is intentionally hidden from native navigation for now.
 
 ## 2. Start safely with Plaid Sandbox
 
@@ -107,30 +106,30 @@ Expo asks Posted backend for link_token
 ## 3. Native Expo requirement
 
 Plaid's current React Native SDK contains native iOS and Android code. It supports Expo projects
-but does not run in Expo Go. As of this guide's July 2026 verification, Plaid documents the
-active 13.x SDK as requiring React Native 0.76+ and Expo 52+; this project uses newer versions.
-Recheck the [official compatibility table](https://plaid.com/docs/link/react-native/) before
-installing because native requirements change.
+but does not run in Expo Go. This project includes the 13.x SDK and `expo-dev-client`; use a custom
+native build. Expo 57 makes iOS 16.4 the effective project minimum. Android is configured for min
+SDK 26 and compile/target SDK 36 in `app.json`.
 
-When credentials are ready:
+For a local native build:
 
 ```bash
 cd apps/client
-npm install react-native-plaid-link-sdk
-npx expo prebuild
-npx expo run:ios
-# or: npx expo run:android
+npm install
+npm run dev:ios
+# or
+npm run dev:android
 ```
 
-After installation, add a platform-specific Link component that performs these exact calls:
+The platform-specific Link component performs these exact calls:
 
 ```text
 POST Posted /money/connections/plaid/link-token
 -> createPlaidLinkSession with returned link_token
--> session.open()
+-> session.open(true)
 -> onSuccess receives public_token
 -> POST public_token to Posted /money/connections/plaid/exchange
--> invalidate money-connection/account queries
+-> POST /money/connections/plaid/{connection_id}/sync
+-> invalidate connection, overview, transaction, and recurring queries
 ```
 
 Version 13 uses session APIs such as `createPlaidLinkSession`; do not copy examples using removed
@@ -142,8 +141,9 @@ For web, use Plaid Link's web package in a platform-specific component rather th
 
 ## 4. Transaction synchronization
 
-`PlaidClient.sync_transactions()` fetches only one page. The following background service still
-needs to be agent-implemented before live transactions flow into Posted:
+`PlaidClient.sync_transactions()` fetches one page. `app/services/plaid_sync.py` composes that
+primitive into a complete cursor update and is called by
+`POST /money/connections/plaid/{connection_id}/sync`.
 
 The background job should loop `/transactions/sync` pages:
 
@@ -164,25 +164,29 @@ map added + modified payloads to TransactionObservation
 call normalize_transactions(...)
 call reconcile_ledger(incoming=normalized, existing=stored, removed=removed_refs)
 
-in one short database transaction:
+after all provider pages have been fetched, in one database transaction:
     apply every ledger action
     persist normalization rejections
     save working_cursor as the new durable cursor
     commit
 ```
 
-Preserve `starting_cursor` until pagination completes. If Plaid reports
-`TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`, discard the accumulated pages and restart from
-`starting_cursor`. Save the final cursor only in the same commit that applies every ledger
-action. Plaid documents this behavior in its
+The implementation preserves the stored cursor until normalization, reconciliation, persistence,
+and analytics refresh all succeed. Rejected provider records fail the sync rather than silently
+advancing the cursor. A production worker still needs explicit handling for Plaid's
+`TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION`: discard accumulated pages and retry from the stored
+cursor. Plaid documents this behavior in its
 [Transactions API](https://plaid.com/docs/api/products/transactions/) and
 [sync migration guide](https://plaid.com/docs/transactions/sync-migration/).
 
-Do not keep a database transaction open during provider HTTP requests. Fetch pages first or use a short transaction per safely replayable batch.
+The manual endpoint currently keeps one request-scoped SQLAlchemy session while it fetches pages,
+but it does not commit until the complete batch is valid. Before production scale, move provider
+fetching and replay into a background worker so provider latency does not consume an API request
+or database connection.
 
 ## 5. Webhooks
 
-Production should receive `SYNC_UPDATES_AVAILABLE`, enqueue a sync job, and return quickly. A webhook is a signal to fetch; it is not the transaction data itself.
+Production should receive `SYNC_UPDATES_AVAILABLE`, enqueue the same sync service, and return quickly. A webhook is a signal to fetch; it is not the transaction data itself.
 
 Before production:
 

@@ -1,16 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { HoldingsList } from '@/components/HoldingsList';
 import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
+import { setAssistantSection } from '@/lib/assistantSection';
 import { money } from '@/lib/format';
 import { colors } from '@/theme/tokens';
 
 export default function HoldingsScreen() {
+  useEffect(() => setAssistantSection('investing'), []);
   const [search, setSearch] = useState('');
   const query = useQuery({ queryKey: ['holdings'], queryFn: api.holdings });
   const holdings = useMemo(() => {

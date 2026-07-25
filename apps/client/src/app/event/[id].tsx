@@ -59,6 +59,12 @@ export default function EventDetailScreen() {
                 ) : null}
               </View>
             </View>
+            {query.data.ai_insight ? (
+              <View style={styles.aiInsightSection}>
+                <Text style={styles.sectionKicker}>AI INSIGHT</Text>
+                <Text style={styles.aiInsightText}>{query.data.ai_insight}</Text>
+              </View>
+            ) : null}
             <View style={styles.reasonSection}>
               <Text style={styles.sectionKicker}>WHY THIS MATTERS</Text>
               {query.data.reasons.map((reason, index) => (
@@ -123,6 +129,8 @@ const styles = StyleSheet.create({
   sourceName: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   sourceLink: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 5 },
   sourceLinkText: { color: colors.tealDark, fontSize: 10, fontWeight: '700' },
+  aiInsightSection: { padding: 24, backgroundColor: colors.tealSoft, borderBottomWidth: 1, borderBottomColor: colors.line },
+  aiInsightText: { color: colors.tealDark, fontSize: 13, lineHeight: 20, marginTop: 6 },
   reasonSection: { padding: 24 },
   sectionKicker: { color: colors.inkFaint, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 5 },
   reasonRow: { paddingVertical: 17, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', gap: 14 },
