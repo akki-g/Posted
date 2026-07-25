@@ -30,6 +30,18 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
+class UserPreference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "user_preferences"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    immediate_alert_level: Mapped[str] = mapped_column(
+        String(20), default="important", nullable=False
+    )
+    push_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    daily_briefing_time: Mapped[str] = mapped_column(String(8), default="08:00", nullable=False)
+
+
 class BrokerageConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "brokerage_connections"
 

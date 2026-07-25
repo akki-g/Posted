@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from httpx import AsyncClient
 
 
@@ -72,6 +74,32 @@ async def test_preferences_round_trip(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     assert refreshed.json() == updated
+
+
+async def test_preferences_are_scoped_per_user(client: AsyncClient) -> None:
+    from app.security.session_token import create_session_token
+
+    first_user = uuid4()
+    second_user = uuid4()
+    first_headers = {"Authorization": f"Bearer {create_session_token(first_user, 'test-secret')}"}
+    second_headers = {"Authorization": f"Bearer {create_session_token(second_user, 'test-secret')}"}
+
+    await client.put(
+        "/api/v1/settings",
+        json={
+            "immediate_alert_level": "urgent",
+            "push_enabled": False,
+            "email_digest_enabled": True,
+            "daily_briefing_time": "06:00",
+        },
+        headers=first_headers,
+    )
+
+    first = await client.get("/api/v1/settings", headers=first_headers)
+    second = await client.get("/api/v1/settings", headers=second_headers)
+
+    assert first.json()["daily_briefing_time"] == "06:00"
+    assert second.json()["daily_briefing_time"] == "08:00"  # untouched default for a new user
 
 
 async def test_money_overview_excludes_transfers_and_pending_activity(
