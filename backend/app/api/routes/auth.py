@@ -41,7 +41,12 @@ async def google_authorize(
         state,
         max_age=int(CSRF_STATE_TTL.total_seconds()),
         httponly=True,
-        secure=not settings.demo_mode,
+        # Keyed off the redirect URI's own scheme, not demo_mode -- those are
+        # independent (this app is tested locally over plain HTTP with
+        # demo_mode already off). A Secure cookie is silently dropped by the
+        # browser on a non-HTTPS origin, which would break the CSRF check
+        # entirely rather than just weaken it.
+        secure=settings.google_redirect_uri.startswith("https://"),
         samesite="lax",
     )
     return OAuthAuthorizeResponse(authorization_url=client.authorization_url(state=state))

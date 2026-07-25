@@ -15,6 +15,8 @@ async def client() -> AsyncIterator[AsyncClient]:
         database_url="sqlite+aiosqlite:///:memory:",
         demo_mode=True,
         app_secret="test-secret",
+        google_client_id=None,
+        google_client_secret=None,
         schwab_client_id=None,
         schwab_client_secret=None,
         plaid_client_id=None,
