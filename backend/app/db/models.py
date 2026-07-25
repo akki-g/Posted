@@ -303,6 +303,7 @@ class AssistantMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str | None] = mapped_column(String(16))
+    sources: Mapped[list[dict[str, str]] | None] = mapped_column(JSON)
 
 
 class Alert(UUIDPrimaryKeyMixin, TimestampMixin, Base):

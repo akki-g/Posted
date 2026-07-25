@@ -120,6 +120,7 @@ class AssistantMessageSummary(APIModel):
     role: str
     content: str
     section: str | None
+    sources: list[dict[str, str]] | None
     created_at: datetime
 
 
