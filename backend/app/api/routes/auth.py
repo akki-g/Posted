@@ -1,8 +1,9 @@
+import hmac
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,18 +13,37 @@ from app.api.schemas import AuthUser, OAuthAuthorizeResponse
 from app.config import Settings
 from app.db.models import User
 from app.providers.google.oauth import GoogleOAuthClient
-from app.security.session_token import create_csrf_state, create_session_token, verify_csrf_state
+from app.security.session_token import (
+    CSRF_STATE_TTL,
+    create_csrf_state,
+    create_session_token,
+    verify_csrf_state,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = structlog.get_logger()
 
+CSRF_COOKIE_NAME = "posted_oauth_state"
+
 
 @router.get("/google/authorize", response_model=OAuthAuthorizeResponse)
 async def google_authorize(
+    response: Response,
     settings: Settings = Depends(get_app_settings),
 ) -> OAuthAuthorizeResponse:
     client = _google_client(settings)
     state = create_csrf_state(settings.app_secret.get_secret_value())
+    # Bind the state to this browser so a completed OAuth handoff (code +
+    # state) can't be captured and replayed against a different victim's
+    # browser to log them into the wrong (e.g. attacker's) account.
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        state,
+        max_age=int(CSRF_STATE_TTL.total_seconds()),
+        httponly=True,
+        secure=not settings.demo_mode,
+        samesite="lax",
+    )
     return OAuthAuthorizeResponse(authorization_url=client.authorization_url(state=state))
 
 
@@ -32,17 +52,27 @@ async def google_callback(
     code: str | None = Query(default=None, min_length=1),
     state_value: str = Query(alias="state", min_length=1),
     error: str | None = Query(default=None),
+    state_cookie: str | None = Cookie(default=None, alias=CSRF_COOKIE_NAME),
     session: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
 ) -> RedirectResponse:
-    if not verify_csrf_state(state_value, settings.app_secret.get_secret_value()):
+    # Mutating an injected `Response` dependency has no effect once the handler
+    # returns its own Response object directly (as every branch below does), so
+    # the cookie is cleared on each constructed RedirectResponse individually.
+    if (
+        not verify_csrf_state(state_value, settings.app_secret.get_secret_value())
+        or not state_cookie
+        or not hmac.compare_digest(state_cookie, state_value)
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired Google OAuth state",
         )
 
     if error:
-        return RedirectResponse(_with_query(settings.frontend_login_callback_url, error="1"))
+        redirect = RedirectResponse(_with_query(settings.frontend_login_callback_url, error="1"))
+        redirect.delete_cookie(CSRF_COOKIE_NAME)
+        return redirect
     if code is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,6 +89,12 @@ async def google_callback(
             detail="Google rejected the authorization exchange.",
         ) from exc
 
+    if not userinfo.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account email is not verified.",
+        )
+
     user = await session.scalar(select(User).where(User.email == userinfo.email))
     if user is None:
         user = User(
@@ -70,7 +106,9 @@ async def google_callback(
     await session.commit()
 
     token = create_session_token(user.id, settings.app_secret.get_secret_value())
-    return RedirectResponse(_with_query(settings.frontend_login_callback_url, session=token))
+    redirect = RedirectResponse(_with_query(settings.frontend_login_callback_url, session=token))
+    redirect.delete_cookie(CSRF_COOKIE_NAME)
+    return redirect
 
 
 @router.get("/me", response_model=AuthUser)

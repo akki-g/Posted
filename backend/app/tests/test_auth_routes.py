@@ -17,6 +17,69 @@ async def test_callback_rejects_invalid_state(client: AsyncClient) -> None:
     assert response.status_code == 400
 
 
+async def test_callback_rejects_a_valid_state_without_its_matching_cookie(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """A real, signed state replayed without the browser's own cookie must fail.
+
+    This is what stops an attacker from completing their own Google login,
+    then handing the resulting callback URL to a victim to log them into the
+    attacker's Posted account.
+    """
+    from app.api.routes import auth as auth_routes
+
+    class FakeGoogleClient:
+        def authorization_url(self, *, state: str) -> str:
+            return f"https://accounts.google.com/o/oauth2/v2/auth?state={state}"
+
+    monkeypatch.setattr(auth_routes, "_google_client", lambda settings: FakeGoogleClient())
+
+    authorize = await client.get("/api/v1/auth/google/authorize")
+    state = parse_qs(urlsplit(authorize.json()["authorization_url"]).query)["state"][0]
+
+    client.cookies.clear()
+    response = await client.get(
+        "/api/v1/auth/google/callback",
+        params={"code": "irrelevant", "state": state},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+async def test_callback_rejects_an_unverified_google_email(
+    client: AsyncClient, monkeypatch
+) -> None:
+    from app.api.routes import auth as auth_routes
+    from app.providers.google.oauth import GoogleUserInfo
+
+    class FakeGoogleClient:
+        def authorization_url(self, *, state: str) -> str:
+            return f"https://accounts.google.com/o/oauth2/v2/auth?state={state}"
+
+        async def exchange_code(self, *, code: str) -> str:
+            return "fake-access-token"
+
+        async def fetch_userinfo(self, *, access_token: str) -> GoogleUserInfo:
+            return GoogleUserInfo(
+                sub="999",
+                email="unverified@example.com",
+                name="Unverified Person",
+                email_verified=False,
+            )
+
+    monkeypatch.setattr(auth_routes, "_google_client", lambda settings: FakeGoogleClient())
+
+    authorize = await client.get("/api/v1/auth/google/authorize")
+    state = parse_qs(urlsplit(authorize.json()["authorization_url"]).query)["state"][0]
+
+    callback = await client.get(
+        "/api/v1/auth/google/callback",
+        params={"code": "test-code", "state": state},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 400
+
+
 async def test_callback_creates_a_new_user_and_redirects_with_a_session_token(
     client: AsyncClient, monkeypatch
 ) -> None:
