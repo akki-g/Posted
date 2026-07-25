@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     schwab_client_id: str | None = None
     schwab_client_secret: str | None = None
     schwab_redirect_uri: str = "http://127.0.0.1:8000/api/v1/connections/schwab/callback"
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://127.0.0.1:8000/api/v1/auth/google/callback"
+    frontend_login_callback_url: str = "http://127.0.0.1:8081/login/callback"
     plaid_client_id: str | None = None
     plaid_secret: str | None = None
     plaid_environment: str = "sandbox"
@@ -42,6 +46,10 @@ class Settings(BaseSettings):
     openbb_benzinga_api_key: str | None = None
     openbb_intrinio_api_key: str | None = None
     openbb_news_provider: str = "yfinance"
+    alpaca_api_key: str | None = None
+    alpaca_api_secret: str | None = None
+    finnhub_api_key: str | None = None
+    market_data_yahoo_fallback: bool = True
     sec_user_agent: str = "Posted contact@example.com"
     anthropic_api_key: str | None = None
 
@@ -57,12 +65,24 @@ class Settings(BaseSettings):
         return bool(self.schwab_client_id and self.schwab_client_secret)
 
     @property
+    def google_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
     def plaid_configured(self) -> bool:
         return bool(self.plaid_client_id and self.plaid_secret)
 
     @property
     def ai_insights_configured(self) -> bool:
         return bool(self.anthropic_api_key)
+
+    @property
+    def alpaca_configured(self) -> bool:
+        return bool(self.alpaca_api_key and self.alpaca_api_secret)
+
+    @property
+    def finnhub_configured(self) -> bool:
+        return bool(self.finnhub_api_key)
 
 
 @lru_cache

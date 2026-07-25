@@ -104,3 +104,8 @@ async def test_plaid_status_explains_missing_credentials(client: AsyncClient) ->
     assert response.status_code == 200
     assert response.json()["configured"] is False
     assert response.json()["environment"] == "sandbox"
+
+
+async def test_health_reports_environment_without_google_credentials(client: AsyncClient) -> None:
+    response = await client.get("/api/v1/health")
+    assert response.status_code == 200
