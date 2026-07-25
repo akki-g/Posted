@@ -9,7 +9,7 @@ type Props = {
   contextLabel: string;
   initialSection: AssistantSection;
   onClose: () => void;
-  screenContext: string;
+  screenContext: string | (() => string);
 };
 
 export function AssistantDrawer({

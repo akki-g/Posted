@@ -18,7 +18,7 @@ const SECTION_OPTIONS: { label: string; value: AssistantSection }[] = [
 type Props = {
   compact?: boolean;
   initialSection?: AssistantSection;
-  screenContext?: string;
+  screenContext?: string | (() => string);
 };
 
 function suggestedPrompts(section: AssistantSection, screenContext?: string): string[] {
@@ -65,6 +65,7 @@ function suggestedPrompts(section: AssistantSection, screenContext?: string): st
 }
 
 export function AssistantChat({ compact = false, initialSection, screenContext }: Props) {
+  const resolvedScreenContext = typeof screenContext === 'function' ? screenContext() : screenContext;
   const trackedSection = useAssistantSection();
   const preferredSection = initialSection ?? trackedSection;
   const [section, setSection] = useState<AssistantSection>(preferredSection);
@@ -83,7 +84,7 @@ export function AssistantChat({ compact = false, initialSection, screenContext }
   });
 
   const send = useMutation({
-    mutationFn: (message: string) => api.sendAssistantMessage(message, section, screenContext),
+    mutationFn: (message: string) => api.sendAssistantMessage(message, section, resolvedScreenContext),
     onMutate: async (message) => {
       setPending((current) => [
         ...current,
@@ -117,8 +118,8 @@ export function AssistantChat({ compact = false, initialSection, screenContext }
 
   const messages = [...(conversation.data?.messages ?? []), ...pending];
   const prompts = useMemo(
-    () => suggestedPrompts(section, screenContext),
-    [screenContext, section],
+    () => suggestedPrompts(section, resolvedScreenContext),
+    [resolvedScreenContext, section],
   );
 
   const submit = () => {

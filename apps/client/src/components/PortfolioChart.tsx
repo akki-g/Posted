@@ -1,15 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  PanResponder,
-  StyleSheet,
-  Text,
-  View,
-  type LayoutChangeEvent,
-  type PointerEvent,
-} from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 
-import { pointIndexForX } from '@/lib/chartInteraction';
+import { useChartScrub } from '@/lib/chartScrub';
 import type { ChartPoint } from '@/lib/types';
 import { money } from '@/lib/format';
 import { colors } from '@/theme/tokens';
@@ -48,40 +41,13 @@ type Props = {
 
 export function PortfolioChart({ points, onSelectionChange }: Props) {
   const chart = useMemo(() => buildPath(points), [points]);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [chartWidth, setChartWidth] = useState(1);
-  const selectedIndex =
-    activeIndex == null ? Math.max(points.length - 1, 0) : Math.min(activeIndex, points.length - 1);
+  const scrub = useChartScrub(points.length, 'point');
+  const selectedIndex = scrub.selectedIndex;
   const selectedPoint = points[selectedIndex];
-
-  useEffect(() => {
-    setActiveIndex(points.length ? points.length - 1 : null);
-  }, [points.length]);
 
   useEffect(() => {
     onSelectionChange?.(selectedPoint ?? null);
   }, [onSelectionChange, selectedPoint]);
-
-  const selectAt = useCallback(
-    (x: number) => {
-      if (!points.length) return;
-      setActiveIndex(pointIndexForX(x, chartWidth, points.length));
-    },
-    [chartWidth, points.length],
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dx) > Math.abs(gesture.dy),
-        onShouldBlockNativeResponder: () => false,
-        onPanResponderGrant: (event) => selectAt(event.nativeEvent.locationX),
-        onPanResponderMove: (event) => selectAt(event.nativeEvent.locationX),
-      }),
-    [selectAt],
-  );
 
   if (points.length < 2 || !selectedPoint) {
     return (
@@ -97,14 +63,6 @@ export function PortfolioChart({ points, onSelectionChange }: Props) {
   const selectedChange = selectedValue - Number(points[0].value);
   const crosshairX = (selectedIndex / Math.max(points.length - 1, 1)) * WIDTH;
   const crosshairY = valueToY(selectedValue, chart.min, chart.max - chart.min || 1);
-
-  const onChartLayout = (event: LayoutChangeEvent) => {
-    setChartWidth(Math.max(event.nativeEvent.layout.width, 1));
-  };
-
-  const onPointerMove = (event: PointerEvent) => {
-    selectAt(event.nativeEvent.offsetX);
-  };
 
   return (
     <View style={styles.root}>
@@ -136,7 +94,7 @@ export function PortfolioChart({ points, onSelectionChange }: Props) {
           </View>
         </View>
       </View>
-      <View style={styles.chartWrap} onLayout={onChartLayout}>
+      <View style={styles.chartWrap} onLayout={scrub.onLayout}>
         <Svg
           width="100%"
           height={HEIGHT}
@@ -200,23 +158,18 @@ export function PortfolioChart({ points, onSelectionChange }: Props) {
         <Text style={[styles.axisLabel, styles.axisTop]}>{money(chart.max, true)}</Text>
         <Text style={[styles.axisLabel, styles.axisBottom]}>{money(chart.min, true)}</Text>
         <View
-          {...panResponder.panHandlers}
+          {...scrub.panHandlers}
           accessible
           accessibilityLabel={`Interactive portfolio chart. Selected ${formatTrackingDate(selectedPoint.timestamp)}, value ${money(selectedValue)}`}
           accessibilityRole="adjustable"
-          accessibilityValue={{ min: 0, max: points.length - 1, now: selectedIndex }}
-          onAccessibilityAction={(event) => {
-            const delta = event.nativeEvent.actionName === 'increment' ? 1 : -1;
-            setActiveIndex((current) =>
-              Math.max(0, Math.min((current ?? points.length - 1) + delta, points.length - 1)),
-            );
-          }}
+          accessibilityValue={scrub.accessibilityValue}
+          onAccessibilityAction={scrub.onAccessibilityAction}
           accessibilityActions={[
             { name: 'increment', label: 'Next portfolio value' },
             { name: 'decrement', label: 'Previous portfolio value' },
           ]}
-          onPointerDown={onPointerMove}
-          onPointerMove={onPointerMove}
+          onPointerDown={scrub.onPointerDown}
+          onPointerMove={scrub.onPointerMove}
           style={styles.trackingLayer}
         />
       </View>

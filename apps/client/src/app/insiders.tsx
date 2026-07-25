@@ -11,24 +11,21 @@ import {
   TrendingUp,
   UserRoundSearch,
 } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
-  type LayoutChangeEvent,
-  type PointerEvent,
 } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { MarketSearch } from '@/components/MarketSearch';
 import { DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
 import { setAssistantSection } from '@/lib/assistantSection';
-import { barIndexForX } from '@/lib/chartInteraction';
+import { useChartScrub } from '@/lib/chartScrub';
 import { money, number, percent, relativeTime, signedMoney } from '@/lib/format';
 import { marketApi } from '@/lib/marketApi';
 import type {
@@ -484,42 +481,13 @@ function SentimentChart({
   onSelectionChange?: (point: InsiderSentimentPoint | null) => void;
 }) {
   const visible = useMemo(() => points.slice(-12), [points]);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [plotWidth, setPlotWidth] = useState(1);
-  const selectedIndex =
-    activeIndex == null
-      ? Math.max(visible.length - 1, 0)
-      : Math.min(activeIndex, visible.length - 1);
+  const scrub = useChartScrub(visible.length, 'bar');
+  const selectedIndex = scrub.selectedIndex;
   const selectedPoint = visible[selectedIndex];
-
-  useEffect(() => {
-    setActiveIndex(visible.length ? visible.length - 1 : null);
-  }, [visible.length]);
 
   useEffect(() => {
     onSelectionChange?.(selectedPoint ?? null);
   }, [onSelectionChange, selectedPoint]);
-
-  const selectAt = useCallback(
-    (x: number) => {
-      if (!visible.length) return;
-      setActiveIndex(barIndexForX(x, plotWidth, visible.length));
-    },
-    [plotWidth, visible.length],
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dx) > Math.abs(gesture.dy),
-        onShouldBlockNativeResponder: () => false,
-        onPanResponderGrant: (event) => selectAt(event.nativeEvent.locationX),
-        onPanResponderMove: (event) => selectAt(event.nativeEvent.locationX),
-      }),
-    [selectAt],
-  );
 
   if (!points.length) {
     return (
@@ -564,11 +532,7 @@ function SentimentChart({
           <Text style={styles.scaleText}>0</Text>
           <Text style={styles.scaleText}>−100</Text>
         </View>
-        <View
-          onLayout={(event: LayoutChangeEvent) =>
-            setPlotWidth(Math.max(event.nativeEvent.layout.width, 1))
-          }
-          style={styles.chartPlot}>
+        <View onLayout={scrub.onLayout} style={styles.chartPlot}>
           <View style={[styles.guideLine, styles.guideTop]} />
           <View style={[styles.guideLine, styles.guideMiddle]} />
           <View style={[styles.guideLine, styles.guideBottom]} />
@@ -597,23 +561,18 @@ function SentimentChart({
             );
           })}
           <View
-            {...panResponder.panHandlers}
+            {...scrub.panHandlers}
             accessible
             accessibilityLabel={`Interactive MSPR chart. Selected ${monthLabel(selectedPoint)} ${selectedPoint.year}, MSPR ${selectedPoint.mspr.toFixed(1)}`}
             accessibilityRole="adjustable"
-            accessibilityValue={{ min: 0, max: visible.length - 1, now: selectedIndex }}
-            onAccessibilityAction={(event) => {
-              const delta = event.nativeEvent.actionName === 'increment' ? 1 : -1;
-              setActiveIndex((current) =>
-                Math.max(0, Math.min((current ?? visible.length - 1) + delta, visible.length - 1)),
-              );
-            }}
+            accessibilityValue={scrub.accessibilityValue}
+            onAccessibilityAction={scrub.onAccessibilityAction}
             accessibilityActions={[
               { name: 'increment', label: 'Next month' },
               { name: 'decrement', label: 'Previous month' },
             ]}
-            onPointerDown={(event: PointerEvent) => selectAt(event.nativeEvent.offsetX)}
-            onPointerMove={(event: PointerEvent) => selectAt(event.nativeEvent.offsetX)}
+            onPointerDown={scrub.onPointerDown}
+            onPointerMove={scrub.onPointerMove}
             style={styles.sentimentTrackingLayer}
           />
         </View>

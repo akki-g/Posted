@@ -9,7 +9,7 @@ import {
   ExternalLink,
   RefreshCw,
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Pressable,
@@ -46,8 +46,13 @@ export default function StockDetailScreen() {
   const desktop = width >= 980;
   const showHeaderSearch = width >= 760;
   const [period, setPeriod] = useState<MarketPeriod>('1D');
-  const [chartContext, setChartContext] = useState(
+  const chartContextRef = useRef(
     'The price chart has not loaded yet, so no chart bar or technical-indicator formula is selected.',
+  );
+  const getAssistantContext = useCallback(
+    () =>
+      `The user is researching ${symbol}. The screen includes its current quote, price history, earnings, related news, insider transactions and sentiment, and any portfolio position. When the user says "this stock", "this position", "this chart", "this formula", or asks why it is moving, they mean ${symbol}. The selected chart range is ${period}. ${chartContextRef.current} Use this chart state to explain the technical indicator the user is viewing, but fetch current market and portfolio facts with the available tools before answering.`,
+    [period, symbol],
   );
   const detail = useQuery({
     queryKey: ['market-stock', symbol],
@@ -75,7 +80,7 @@ export default function StockDetailScreen() {
 
   return (
     <AppShell
-      assistantContext={`The user is researching ${symbol}. The screen includes its current quote, price history, earnings, related news, insider transactions and sentiment, and any portfolio position. When the user says "this stock", "this position", "this chart", "this formula", or asks why it is moving, they mean ${symbol}. The selected chart range is ${period}. ${chartContext} Use this chart state to explain the technical indicator the user is viewing, but fetch current market and portfolio facts with the available tools before answering.`}
+      assistantContext={getAssistantContext}
       assistantContextLabel={`${symbol} · Stock research`}
       eyebrow="STOCK RESEARCH"
       onRefresh={() => void refresh()}
@@ -180,59 +185,61 @@ export default function StockDetailScreen() {
 
           {!showHeaderSearch ? <MarketSearch compact initialValue="" /> : null}
 
+          <View style={[styles.panel, styles.chartPanelSection]}>
+            <SectionHeader
+              title="Price history"
+              caption={
+                width >= 520 && history.data
+                  ? `${history.data.interval === '1Min' ? '1-minute' : 'Daily'} bars · ${history.data.source}`
+                  : undefined
+              }
+              action={
+                <View style={styles.periodRow}>
+                  {PERIODS.map((item) => (
+                    <Pressable
+                      key={item}
+                      onPress={() => setPeriod(item)}
+                      style={[
+                        styles.periodButton,
+                        period === item && styles.periodButtonActive,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.periodText,
+                          period === item && styles.periodTextActive,
+                        ]}>
+                        {item}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              }
+            />
+            {history.isLoading ? <LoadingState label="Loading price history" /> : null}
+            {history.isError ? (
+              <ErrorState message={history.error.message} retry={() => history.refetch()} />
+            ) : null}
+            {history.data ? (
+              <View style={styles.chartBody}>
+                <StockPriceChart
+                  points={history.data.points}
+                  sourceInterval={history.data.interval}
+                  onContextChange={(value) => {
+                    chartContextRef.current = value;
+                  }}
+                />
+                <View style={styles.coverageNote}>
+                  <Text style={styles.coverageText}>{history.data.coverage_note}</Text>
+                  <Text style={styles.coverageText}>
+                    Updated {relativeTime(history.data.last_updated)}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
+
           <View style={[styles.contentGrid, !desktop && styles.contentGridStacked]}>
             <View style={styles.mainColumn}>
-              <View style={styles.panel}>
-                <SectionHeader
-                  title="Price history"
-                  caption={
-                    width >= 520 && history.data
-                      ? `${history.data.interval === '1Min' ? '1-minute' : 'Daily'} bars · ${history.data.source}`
-                      : undefined
-                  }
-                  action={
-                    <View style={styles.periodRow}>
-                      {PERIODS.map((item) => (
-                        <Pressable
-                          key={item}
-                          onPress={() => setPeriod(item)}
-                          style={[
-                            styles.periodButton,
-                            period === item && styles.periodButtonActive,
-                          ]}>
-                          <Text
-                            style={[
-                              styles.periodText,
-                              period === item && styles.periodTextActive,
-                            ]}>
-                            {item}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  }
-                />
-                {history.isLoading ? <LoadingState label="Loading price history" /> : null}
-                {history.isError ? (
-                  <ErrorState message={history.error.message} retry={() => history.refetch()} />
-                ) : null}
-                {history.data ? (
-                  <View style={styles.chartBody}>
-                    <StockPriceChart
-                      points={history.data.points}
-                      sourceInterval={history.data.interval}
-                      onContextChange={setChartContext}
-                    />
-                    <View style={styles.coverageNote}>
-                      <Text style={styles.coverageText}>{history.data.coverage_note}</Text>
-                      <Text style={styles.coverageText}>
-                        Updated {relativeTime(history.data.last_updated)}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-              </View>
-
               <View style={styles.panel}>
                 <SectionHeader
                   title="Earnings"
@@ -756,6 +763,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   chartBody: { padding: 14 },
+  chartPanelSection: { marginBottom: 16 },
   periodRow: { flexDirection: 'row', gap: 2 },
   periodButton: {
     height: 29,

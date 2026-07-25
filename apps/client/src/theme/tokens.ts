@@ -21,6 +21,11 @@ export const colors = {
   negativeSoft: '#FBE5E7',
   warning: '#9A5B00',
   warningSoft: '#FFF0D6',
+  purple: '#7357B8',
+  pink: '#C74B8F',
+  orange: '#C15A1F',
+  indigo: '#4F5FA8',
+  brown: '#B5651D',
   white: '#FFFFFF',
   transparent: 'transparent',
 } as const;

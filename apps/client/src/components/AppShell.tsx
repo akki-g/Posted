@@ -80,7 +80,7 @@ type Props = {
   scroll?: boolean;
   refreshing?: boolean;
   onRefresh?: () => void;
-  assistantContext?: string;
+  assistantContext?: string | (() => string);
   assistantContextLabel?: string;
 };
 
