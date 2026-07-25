@@ -4,6 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider } from '@/lib/AuthContext';
+
 export default function RootLayout() {
   const [queryClient] = useState(
     () =>
@@ -16,20 +18,26 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="feed" />
-          <Stack.Screen name="holdings" />
-          <Stack.Screen name="settings" />
-          <Stack.Screen name="money" />
-          <Stack.Screen name="transactions" />
-          <Stack.Screen name="subscriptions" />
-          <Stack.Screen name="invest" />
-          <Stack.Screen name="news" />
-          <Stack.Screen name="assistant" />
-          <Stack.Screen name="event/[id]" />
-        </Stack>
+        <AuthProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="login/callback" />
+            <Stack.Screen name="feed" />
+            <Stack.Screen name="holdings" />
+            <Stack.Screen name="settings" />
+            <Stack.Screen name="money" />
+            <Stack.Screen name="transactions" />
+            <Stack.Screen name="subscriptions" />
+            <Stack.Screen name="invest" />
+            <Stack.Screen name="news" />
+            <Stack.Screen name="insiders" />
+            <Stack.Screen name="assistant" />
+            <Stack.Screen name="event/[id]" />
+            <Stack.Screen name="stock/[symbol]" />
+          </Stack>
+        </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
