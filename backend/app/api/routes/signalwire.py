@@ -67,10 +67,12 @@ async def receive(
     # SignalWire signs the public URL it delivered to; behind a tunnel that is
     # not request.url, so prefer the configured public webhook URL when set.
     url = settings.signalwire_webhook_url or str(request.url)
-    # SignalWire's Compatibility (cXML) API is Twilio-compatible and, depending on
-    # the space/number config, may send the signature under either header name.
-    signature = request.headers.get("x-signalwire-signature") or request.headers.get(
-        "x-twilio-signature"
+    # SignalWire's cXML API sends BOTH its own signature and the Twilio-compatible
+    # X-Twilio-Signature. Our verifier implements Twilio's exact scheme (URL +
+    # sorted params, HMAC-SHA1, base64), so validate the Twilio header first; the
+    # SignalWire-branded header uses a different construction and won't match this.
+    signature = request.headers.get("x-twilio-signature") or request.headers.get(
+        "x-signalwire-signature"
     )
     try:
         verify_signalwire_signature(
@@ -101,24 +103,29 @@ async def receive(
             "configured_order": url + order_join,
             "url_only": url,
         }
+        # Test EVERY signature header SignalWire sent against every candidate
+        # signing string / algo / encoding, so a match tells us the exact
+        # (header, string, algorithm) combination the verifier should use.
+        sig_headers = {
+            name: value
+            for name, value in request.headers.items()
+            if "signature" in name.lower()
+        }
         matches = []
-        for name, data in candidates.items():
-            for algo in ("sha1", "sha256"):
-                digest = hmac.new(token.encode(), data.encode("utf-8"), algo).digest()
-                if base64.b64encode(digest).decode() == signature:
-                    matches.append(f"{name}/{algo}/base64")
-                if digest.hex() == signature:
-                    matches.append(f"{name}/{algo}/hex")
+        for header_name, header_val in sig_headers.items():
+            for cand_name, data in candidates.items():
+                for algo in ("sha1", "sha256"):
+                    digest = hmac.new(token.encode(), data.encode("utf-8"), algo).digest()
+                    if base64.b64encode(digest).decode() == header_val:
+                        matches.append(f"{header_name}::{cand_name}/{algo}/base64")
+                    if digest.hex() == header_val:
+                        matches.append(f"{header_name}::{cand_name}/{algo}/hex")
         logger.warning(
             "signalwire_signature_rejected",
             matched_variants=matches or "NONE",
             param_keys=sorted(params),
             configured_url=url,
-            # PII-safe: header NAMES only (no values) + received signature length,
-            # to distinguish a missing/mis-named signature header from a mismatch.
-            signature_header_names=sorted(
-                name for name in request.headers if "signature" in name.lower()
-            ),
+            signature_header_names=sorted(sig_headers),
             received_len=len(signature) if signature else 0,
         )
         raise
