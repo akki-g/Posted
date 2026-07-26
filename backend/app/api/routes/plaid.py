@@ -4,8 +4,9 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_app_settings, get_current_user_id, get_db
@@ -22,6 +23,7 @@ from app.security.vault import TokenVault
 from app.services.plaid_sync import PlaidSyncError, sync_plaid_transactions
 
 router = APIRouter(prefix="/money/connections/plaid", tags=["money connections"])
+logger = structlog.get_logger()
 
 
 @router.get("/status")
@@ -74,6 +76,7 @@ async def exchange_plaid_public_token(
     client = _plaid_client(settings)
     try:
         exchange = await client.exchange_public_token(request.public_token)
+        institution_id = (await client.get_item(exchange.access_token)).get("institution_id")
         raw_accounts = await client.get_accounts(exchange.access_token)
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         raise HTTPException(
@@ -81,18 +84,45 @@ async def exchange_plaid_public_token(
             detail="Plaid could not connect this financial institution.",
         ) from exc
 
-    connection = await session.scalar(
-        select(FinancialConnection).where(
-            FinancialConnection.user_id == user_id,
-            FinancialConnection.provider == "plaid",
-            FinancialConnection.provider_item_id == exchange.item_id,
+    connection = None
+    if institution_id:
+        connection = await session.scalar(
+            select(FinancialConnection).where(
+                FinancialConnection.user_id == user_id,
+                FinancialConnection.provider == "plaid",
+                FinancialConnection.institution_id == institution_id,
+            )
         )
-    )
+    if connection is None:  # fall back to legacy item_id match, else create
+        connection = await session.scalar(
+            select(FinancialConnection).where(
+                FinancialConnection.user_id == user_id,
+                FinancialConnection.provider == "plaid",
+                FinancialConnection.provider_item_id == exchange.item_id,
+            )
+        )
+
+    vault = TokenVault(settings.app_secret.get_secret_value())
+    old_access_token: str | None = None
+    if connection is not None:
+        old_credential = await session.scalar(
+            select(FinancialCredential).where(
+                FinancialCredential.connection_id == connection.id
+            )
+        )
+        if old_credential is not None:
+            old_access_token = vault.decrypt(old_credential.access_token_encrypted)
+
+    # Commit the read-only transaction before making any further Plaid network
+    # call -- don't hold DB locks open while waiting on an external HTTP request.
+    await session.commit()
+
     if connection is None:
         connection = FinancialConnection(
             user_id=user_id,
             provider="plaid",
             provider_item_id=exchange.item_id,
+            institution_id=institution_id,
             display_name="Plaid connection",
             status="connected",
             last_synced_at=None,
@@ -101,14 +131,27 @@ async def exchange_plaid_public_token(
         session.add(connection)
         await session.flush()
     else:
+        # Refresh in place: drop the dead Item at Plaid, re-point the connection.
+        if old_access_token is not None:
+            try:
+                await client.remove_item(old_access_token)
+            except Exception:  # noqa: BLE001 - old Item removal is best-effort
+                logger.warning(
+                    "plaid_old_item_remove_failed", connection_id=str(connection.id)
+                )
+        connection.provider_item_id = exchange.item_id
+        connection.institution_id = institution_id or connection.institution_id
         connection.status = "connected"
+        connection.cursor = None  # new Item => fresh /transactions/sync
+        await session.execute(
+            delete(FinancialAccount).where(FinancialAccount.connection_id == connection.id)
+        )  # cascades txns + snapshots
+        await session.flush()
 
     credential = await session.scalar(
         select(FinancialCredential).where(FinancialCredential.connection_id == connection.id)
     )
-    encrypted_token = TokenVault(settings.app_secret.get_secret_value()).encrypt(
-        exchange.access_token
-    )
+    encrypted_token = vault.encrypt(exchange.access_token)
     if credential is None:
         session.add(
             FinancialCredential(
