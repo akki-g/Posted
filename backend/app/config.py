@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     signalwire_space_url: str | None = None
     signalwire_project_id: str | None = None
     signalwire_api_token: SecretStr | None = None
+    # Distinct from signalwire_api_token: SignalWire signs inbound webhook
+    # requests with a separate per-project "Signing Key" (Dashboard > API
+    # Credentials > Signing Key), not the REST API auth token. The two are
+    # unrelated secrets even though the token also authenticates successfully
+    # against the REST API - only the signing key validates webhook HMACs.
+    signalwire_signing_key: SecretStr | None = None
     signalwire_from_number: str | None = None
     signalwire_local_test_phone: str | None = None
     # The exact public URL registered as the number's inbound webhook. SignalWire

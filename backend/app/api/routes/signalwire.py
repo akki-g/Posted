@@ -66,9 +66,12 @@ async def receive(
         # SignalWire signs the public URL it delivered to; behind a reverse
         # proxy request.url is not that URL, so prefer the configured one.
         configured_url = settings.signalwire_webhook_url or str(request.url)
+        # Webhook signatures are HMACed with the Dashboard "Signing Key", a
+        # distinct secret from signalwire_api_token (which only authenticates
+        # REST API calls). See app.services.signalwire_signature.
         token = (
-            settings.signalwire_api_token.get_secret_value()
-            if settings.signalwire_api_token
+            settings.signalwire_signing_key.get_secret_value()
+            if settings.signalwire_signing_key
             else ""
         )
         try:

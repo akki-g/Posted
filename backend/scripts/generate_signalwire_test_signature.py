@@ -1,6 +1,6 @@
 """Generate a legacy SignalWire/Twilio-compatible webhook signature for local testing.
 
-This is a local testing utility only. It never reads SIGNALWIRE_API_TOKEN from
+This is a local testing utility only. It never reads SIGNALWIRE_SIGNING_KEY from
 .env - pass a throwaway token explicitly via --token so nobody accidentally
 prints (or curls with) the production secret.
 

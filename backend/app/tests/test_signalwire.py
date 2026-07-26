@@ -138,7 +138,7 @@ async def signalwire_client() -> AsyncIterator[AsyncClient]:
     settings = Settings(
         app_env="test",
         database_url="sqlite+aiosqlite:///:memory:",
-        signalwire_api_token=TOKEN,
+        signalwire_signing_key=TOKEN,
         signalwire_project_id="test-project",
         signalwire_webhook_url=URL,
         signalwire_allow_unsigned_webhooks=False,
