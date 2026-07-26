@@ -18,7 +18,7 @@ from app.api.routes import plaid_investments
 from app.api.schemas import PlaidExchangeRequest
 from app.config import Settings
 from app.db.base import Base
-from app.db.models import BrokerageAccount, BrokerageConnection, User
+from app.db.models import BrokerageAccount, BrokerageConnection, Position, Security, User
 from app.db.session import create_engine, create_session_factory
 from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
@@ -130,9 +130,15 @@ async def test_relinking_same_institution_refreshes_connection_in_place(monkeypa
         connection_id = connections[0].id
         assert connections[0].institution_id == "ins_acme"
 
-        # Seed a stale account row on the connection to prove refresh clears it.
+        # Seed a stale account row -- WITH a position on it -- on the connection to prove
+        # refresh clears both (a Core bulk delete of BrokerageAccount alone would FK-violate
+        # against this Position row on Postgres, since Position.account_id has no
+        # ondelete="CASCADE" and bulk deletes don't fire the ORM's cascade).
+        stale_account_id = uuid4()
+        security_id = uuid4()
         session.add(
             BrokerageAccount(
+                id=stale_account_id,
                 connection_id=connection_id,
                 provider_account_id="a1",
                 display_name="Old brokerage account",
@@ -140,6 +146,20 @@ async def test_relinking_same_institution_refreshes_connection_in_place(monkeypa
                 balance=Decimal("100.00"),
                 day_change=Decimal("0"),
                 total_gain=Decimal("0"),
+            )
+        )
+        session.add(
+            Security(id=security_id, symbol="ACME", name="Acme Corp", asset_type="equity")
+        )
+        await session.flush()
+        session.add(
+            Position(
+                account_id=stale_account_id,
+                security_id=security_id,
+                quantity=Decimal("10"),
+                average_price=Decimal("50.00"),
+                last_price=Decimal("55.00"),
+                market_value=Decimal("550.00"),
             )
         )
         await session.commit()
@@ -183,6 +203,16 @@ async def test_relinking_same_institution_refreshes_connection_in_place(monkeypa
             )
         ).all()
         assert remaining_accounts == []
+
+        # The stale position on the deleted account is gone too -- this is the case a bulk
+        # BrokerageAccount delete alone can't satisfy: Position.account_id has no
+        # ondelete="CASCADE", so leaving this row behind would FK-violate on Postgres.
+        remaining_positions = (
+            await session.scalars(
+                select(Position).where(Position.account_id == stale_account_id)
+            )
+        ).all()
+        assert remaining_positions == []
 
     await engine.dispose()
 

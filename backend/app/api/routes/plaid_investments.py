@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_app_settings, get_current_user_id, get_db
 from app.api.schemas import ConnectionStatus, PlaidExchangeRequest, PlaidLinkTokenResponse
 from app.config import Settings
-from app.db.models import BrokerageAccount, BrokerageConnection
+from app.db.models import BrokerageAccount, BrokerageConnection, Position
 from app.providers.plaid.client import PlaidClient
 from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
@@ -123,9 +123,21 @@ async def exchange_plaid_investments_token(
             except Exception:  # noqa: BLE001 - refresh proceeds regardless
                 logger.warning("plaid_inv_old_item_remove_failed", connection_id=str(connection.id))
         connection.status = "connected"
+        # A Core bulk delete does not fire the ORM cascade, and Position.account_id has
+        # no DB-level ON DELETE CASCADE -- delete positions first to avoid an FK violation
+        # on Postgres. Next sync repopulates both accounts and positions.
+        await session.execute(
+            delete(Position).where(
+                Position.account_id.in_(
+                    select(BrokerageAccount.id).where(
+                        BrokerageAccount.connection_id == connection.id
+                    )
+                )
+            )
+        )
         await session.execute(
             delete(BrokerageAccount).where(BrokerageAccount.connection_id == connection.id)
-        )  # cascades positions; next sync repopulates
+        )
         await session.flush()
 
     await store.save(connection_id=connection.id, access_token=exchange.access_token)
