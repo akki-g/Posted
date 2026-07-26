@@ -14,7 +14,17 @@ import {
   WalletCards,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { PlaidInvestmentLinkButton } from '@/components/PlaidInvestmentLinkButton';
@@ -100,35 +110,35 @@ export default function SettingsScreen() {
     },
   });
 
-  const confirmUnlinkMoney = (connectionId: string, displayName: string) => {
-    Alert.alert(
-      'Unlink bank connection',
-      `Remove ${displayName}? Its accounts and transaction history will no longer sync.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unlink',
-          style: 'destructive',
-          onPress: () => unlinkMoney.mutate(connectionId),
-        },
-      ],
-    );
+  // Alert.alert is a no-op on react-native-web (no interactive dialog, callbacks
+  // never fire), so on web fall back to the browser's confirm; use the native
+  // dialog on iOS/Android.
+  const confirmDestructive = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Unlink', style: 'destructive', onPress: onConfirm },
+    ]);
   };
 
-  const confirmUnlinkInvesting = (connectionId: string, displayName: string) => {
-    Alert.alert(
+  const confirmUnlinkMoney = (connectionId: string, displayName: string) =>
+    confirmDestructive(
+      'Unlink bank connection',
+      `Remove ${displayName}? Its accounts and transaction history will no longer sync.`,
+      () => unlinkMoney.mutate(connectionId),
+    );
+
+  const confirmUnlinkInvesting = (connectionId: string, displayName: string) =>
+    confirmDestructive(
       'Unlink brokerage connection',
       `Remove ${displayName}? Its accounts and holdings will no longer sync.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unlink',
-          style: 'destructive',
-          onPress: () => unlinkInvesting.mutate(connectionId),
-        },
-      ],
+      () => unlinkInvesting.mutate(connectionId),
     );
-  };
 
   const smsLinkStatus = useQuery({ queryKey: ['sms-link-status'], queryFn: api.smsLinkStatus });
   const [phoneInput, setPhoneInput] = useState('');
@@ -234,7 +244,7 @@ export default function SettingsScreen() {
                     accessibilityLabel={`Unlink ${connection.display_name}`}
                     disabled={unlinkMoney.isPending}
                     onPress={() => confirmUnlinkMoney(connection.id, connection.display_name)}
-                    style={styles.unlinkButton}>
+                    style={({ pressed }) => [styles.unlinkButton, pressed && styles.unlinkButtonPressed]}>
                     <Unlink size={12} color={colors.negative} />
                     <Text style={styles.unlinkButtonText}>
                       {unlinkMoney.isPending && unlinkMoney.variables === connection.id
@@ -315,7 +325,7 @@ export default function SettingsScreen() {
                     accessibilityLabel={`Unlink ${connection.display_name}`}
                     disabled={unlinkInvesting.isPending}
                     onPress={() => confirmUnlinkInvesting(connection.id, connection.display_name)}
-                    style={styles.unlinkButton}>
+                    style={({ pressed }) => [styles.unlinkButton, pressed && styles.unlinkButtonPressed]}>
                     <Unlink size={12} color={colors.negative} />
                     <Text style={styles.unlinkButtonText}>
                       {unlinkInvesting.isPending && unlinkInvesting.variables === connection.id
@@ -633,6 +643,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
+  unlinkButtonPressed: { opacity: 0.55, backgroundColor: 'rgba(0,0,0,0.03)' },
   unlinkButtonText: { color: colors.negative, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
   connectButton: { height: 45, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connectButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
