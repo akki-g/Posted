@@ -5,7 +5,7 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -283,6 +283,47 @@ async def sync_plaid_connection(
         rejected=result.rejected,
         synced_at=result.synced_at,
     )
+
+
+@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_plaid_connection(
+    connection_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+) -> Response:
+    connection = await session.scalar(
+        select(FinancialConnection).where(
+            FinancialConnection.id == connection_id,
+            FinancialConnection.user_id == user_id,
+            FinancialConnection.provider == "plaid",
+        )
+    )
+    if connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    credential = await session.scalar(
+        select(FinancialCredential).where(FinancialCredential.connection_id == connection.id)
+    )
+    access_token: str | None = None
+    if credential is not None:
+        access_token = TokenVault(settings.app_secret.get_secret_value()).decrypt(
+            credential.access_token_encrypted
+        )
+
+    # Commit the read-only transaction before making any Plaid network call --
+    # don't hold DB locks open while waiting on an external HTTP request.
+    await session.commit()
+
+    if access_token is not None:
+        try:
+            await _plaid_client(settings).remove_item(access_token)
+        except Exception:  # noqa: BLE001 - local delete proceeds regardless
+            logger.warning("plaid_item_remove_failed", connection_id=str(connection.id))
+
+    await session.delete(connection)  # cascades accounts -> txns + balance snapshots + credential
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _plaid_client(settings: Settings) -> PlaidClient:
