@@ -89,6 +89,8 @@ export const api = {
         body: JSON.stringify({ idempotency_key: `manual-${Date.now()}` }),
       },
     ),
+  unlinkBrokerageConnection: (connectionId: string) =>
+    request<void>(`/connections/${connectionId}`, { method: 'DELETE' }),
   moneyOverview: () => request<MoneyOverviewResponse>('/money/overview'),
   moneyTransactions: (query = '') =>
     request<MoneyTransactionsResponse>(`/money/transactions${query}`),
@@ -109,6 +111,8 @@ export const api = {
     request<MoneySyncResponse>(`/money/connections/plaid/${connectionId}/sync`, {
       method: 'POST',
     }),
+  unlinkPlaidMoneyConnection: (connectionId: string) =>
+    request<void>(`/money/connections/plaid/${connectionId}`, { method: 'DELETE' }),
   plaidInvestmentsStatus: () =>
     request<{ configured: boolean; environment: string; demo_mode: boolean; message: string }>(
       '/connections/plaid-investments/status',

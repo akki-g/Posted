@@ -10,10 +10,11 @@ import {
   RefreshCw,
   Smartphone,
   SunMedium,
+  Unlink,
   WalletCards,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { PlaidInvestmentLinkButton } from '@/components/PlaidInvestmentLinkButton';
@@ -77,6 +78,57 @@ export default function SettingsScreen() {
       ]);
     },
   });
+  const unlinkMoney = useMutation({
+    mutationFn: api.unlinkPlaidMoneyConnection,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['money-connections'] }),
+        queryClient.invalidateQueries({ queryKey: ['money-overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['money-transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['subscriptions'] }),
+      ]);
+    },
+  });
+  const unlinkInvesting = useMutation({
+    mutationFn: api.unlinkBrokerageConnection,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['connections'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['holdings'] }),
+      ]);
+    },
+  });
+
+  const confirmUnlinkMoney = (connectionId: string, displayName: string) => {
+    Alert.alert(
+      'Unlink bank connection',
+      `Remove ${displayName}? Its accounts and transaction history will no longer sync.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlink',
+          style: 'destructive',
+          onPress: () => unlinkMoney.mutate(connectionId),
+        },
+      ],
+    );
+  };
+
+  const confirmUnlinkInvesting = (connectionId: string, displayName: string) => {
+    Alert.alert(
+      'Unlink brokerage connection',
+      `Remove ${displayName}? Its accounts and holdings will no longer sync.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unlink',
+          style: 'destructive',
+          onPress: () => unlinkInvesting.mutate(connectionId),
+        },
+      ],
+    );
+  };
 
   const smsLinkStatus = useQuery({ queryKey: ['sms-link-status'], queryFn: api.smsLinkStatus });
   const [phoneInput, setPhoneInput] = useState('');
@@ -167,19 +219,36 @@ export default function SettingsScreen() {
                   <Text style={styles.demoStatusText}>DEMO</Text>
                 </View>
               ) : (
-                <Pressable
-                  accessibilityLabel={`Sync ${connection.display_name}`}
-                  disabled={syncMoney.isPending}
-                  onPress={() => syncMoney.mutate(connection.id)}
-                  style={styles.syncButton}>
-                  <RefreshCw size={12} color={colors.tealDark} />
-                  <Text style={styles.syncButtonText}>
-                    {syncMoney.isPending && syncMoney.variables === connection.id ? 'SYNCING' : 'SYNC'}
-                  </Text>
-                </Pressable>
+                <View style={styles.connectionActions}>
+                  <Pressable
+                    accessibilityLabel={`Sync ${connection.display_name}`}
+                    disabled={syncMoney.isPending}
+                    onPress={() => syncMoney.mutate(connection.id)}
+                    style={styles.syncButton}>
+                    <RefreshCw size={12} color={colors.tealDark} />
+                    <Text style={styles.syncButtonText}>
+                      {syncMoney.isPending && syncMoney.variables === connection.id ? 'SYNCING' : 'SYNC'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Unlink ${connection.display_name}`}
+                    disabled={unlinkMoney.isPending}
+                    onPress={() => confirmUnlinkMoney(connection.id, connection.display_name)}
+                    style={styles.unlinkButton}>
+                    <Unlink size={12} color={colors.negative} />
+                    <Text style={styles.unlinkButtonText}>
+                      {unlinkMoney.isPending && unlinkMoney.variables === connection.id
+                        ? 'REMOVING'
+                        : 'UNLINK'}
+                    </Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           ))}
+          {unlinkMoney.isError ? (
+            <Text style={styles.connectionError}>{unlinkMoney.error.message}</Text>
+          ) : null}
           <View style={styles.integrationRow}>
             <View style={styles.integrationIcon}>
               <WalletCards size={17} color={colors.inkMuted} />
@@ -229,21 +298,38 @@ export default function SettingsScreen() {
                   <Text style={styles.demoStatusText}>DEMO</Text>
                 </View>
               ) : (
-                <Pressable
-                  accessibilityLabel={`Sync ${connection.display_name}`}
-                  disabled={syncInvesting.isPending}
-                  onPress={() => syncInvesting.mutate(connection.id)}
-                  style={styles.syncButton}>
-                  <RefreshCw size={12} color={colors.tealDark} />
-                  <Text style={styles.syncButtonText}>
-                    {syncInvesting.isPending && syncInvesting.variables === connection.id
-                      ? 'SYNCING'
-                      : 'SYNC'}
-                  </Text>
-                </Pressable>
+                <View style={styles.connectionActions}>
+                  <Pressable
+                    accessibilityLabel={`Sync ${connection.display_name}`}
+                    disabled={syncInvesting.isPending}
+                    onPress={() => syncInvesting.mutate(connection.id)}
+                    style={styles.syncButton}>
+                    <RefreshCw size={12} color={colors.tealDark} />
+                    <Text style={styles.syncButtonText}>
+                      {syncInvesting.isPending && syncInvesting.variables === connection.id
+                        ? 'SYNCING'
+                        : 'SYNC'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Unlink ${connection.display_name}`}
+                    disabled={unlinkInvesting.isPending}
+                    onPress={() => confirmUnlinkInvesting(connection.id, connection.display_name)}
+                    style={styles.unlinkButton}>
+                    <Unlink size={12} color={colors.negative} />
+                    <Text style={styles.unlinkButtonText}>
+                      {unlinkInvesting.isPending && unlinkInvesting.variables === connection.id
+                        ? 'REMOVING'
+                        : 'UNLINK'}
+                    </Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           ))}
+          {unlinkInvesting.isError ? (
+            <Text style={styles.connectionError}>{unlinkInvesting.error.message}</Text>
+          ) : null}
           <View style={styles.integrationRow}>
             <View style={styles.integrationIcon}>
               <WalletCards size={17} color={colors.inkMuted} />
@@ -537,6 +623,17 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   syncButtonText: { color: colors.tealDark, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
+  connectionActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  unlinkButton: {
+    paddingHorizontal: 9,
+    height: 28,
+    borderWidth: 1,
+    borderColor: colors.negative,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  unlinkButtonText: { color: colors.negative, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
   connectButton: { height: 45, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connectButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
   connectButtonDisabled: { opacity: 0.5 },
