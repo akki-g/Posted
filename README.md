@@ -200,6 +200,16 @@ CREATE INDEX IF NOT EXISTS ix_financial_connections_institution_id ON financial_
 CREATE INDEX IF NOT EXISTS ix_brokerage_connections_institution_id ON brokerage_connections (institution_id);
 ```
 
+Right after that migration runs, also run
+`uv run python scripts/backfill_institution_id.py` (from `backend/`) once.
+Existing connections have `institution_id = NULL`, and the new dedup lookup
+matches on `institution_id` first, so without the backfill the first re-link
+of a pre-existing connection after deploy misses the match and creates a
+duplicate connection instead of reusing the existing one. The script is
+idempotent and safe to re-run. If a duplicate does slip through (e.g. a user
+re-links before the backfill finishes), the Unlink button on the connection
+removes it.
+
 ## Useful commands
 
 ```bash

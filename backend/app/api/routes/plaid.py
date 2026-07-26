@@ -93,6 +93,9 @@ async def exchange_plaid_public_token(
                 FinancialConnection.institution_id == institution_id,
             )
         )
+    # This only fires when get_item returned no institution_id (rare) -- it is
+    # NOT a backstop for pre-existing rows with institution_id = NULL from before
+    # the backfill; those are handled by scripts/backfill_institution_id.py.
     if connection is None:  # fall back to legacy item_id match, else create
         connection = await session.scalar(
             select(FinancialConnection).where(
