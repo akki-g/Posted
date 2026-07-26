@@ -67,7 +67,11 @@ async def receive(
     # SignalWire signs the public URL it delivered to; behind a tunnel that is
     # not request.url, so prefer the configured public webhook URL when set.
     url = settings.signalwire_webhook_url or str(request.url)
-    signature = request.headers.get("x-signalwire-signature")
+    # SignalWire's Compatibility (cXML) API is Twilio-compatible and, depending on
+    # the space/number config, may send the signature under either header name.
+    signature = request.headers.get("x-signalwire-signature") or request.headers.get(
+        "x-twilio-signature"
+    )
     try:
         verify_signalwire_signature(
             url=url,
@@ -110,6 +114,12 @@ async def receive(
             matched_variants=matches or "NONE",
             param_keys=sorted(params),
             configured_url=url,
+            # PII-safe: header NAMES only (no values) + received signature length,
+            # to distinguish a missing/mis-named signature header from a mismatch.
+            signature_header_names=sorted(
+                name for name in request.headers if "signature" in name.lower()
+            ),
+            received_len=len(signature) if signature else 0,
         )
         raise
 
