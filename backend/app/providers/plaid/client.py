@@ -97,6 +97,21 @@ class PlaidClient:
         )
         return tuple(payload.get("accounts") or ())
 
+    async def get_item(self, access_token: str) -> dict[str, Any]:
+        """Return the Plaid item object (carries institution_id)."""
+        response = await self._post(
+            "/item/get",
+            {"client_id": self._client_id, "secret": self._secret, "access_token": access_token},
+        )
+        return response.get("item") or {}
+
+    async def remove_item(self, access_token: str) -> None:
+        """Invalidate an access token / Item at Plaid. Idempotent enough for unlink."""
+        await self._post(
+            "/item/remove",
+            {"client_id": self._client_id, "secret": self._secret, "access_token": access_token},
+        )
+
     async def get_investment_holdings(self, access_token: str) -> dict[str, Any]:
         return await self._post(
             "/investments/holdings/get",
