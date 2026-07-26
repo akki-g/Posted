@@ -128,6 +128,7 @@ def _diagnose_matches(
     signature_headers: Mapping[str, str],
     url_candidates: Mapping[str, str],
     form_fields: FormFields,
+    raw_body: bytes,
 ) -> tuple[SignatureMatch, ...]:
     """Best-effort sweep to identify which (header, URL, algorithm, encoding)
     combination a received signature actually matches. Diagnostic only -
@@ -137,6 +138,10 @@ def _diagnose_matches(
         name: build_legacy_payload(url=url, form_fields=form_fields)
         for name, url in url_candidates.items()
     }
+    if raw_body:
+        for name, url in url_candidates.items():
+            candidates[f"{name}_plus_raw_body"] = url.encode("utf-8") + raw_body
+        candidates["raw_body_only"] = raw_body
 
     matches: list[SignatureMatch] = []
     for header_name, received in signature_headers.items():
@@ -168,6 +173,7 @@ def verify_signalwire_request(
     form_fields: FormFields,
     headers: Mapping[str, str],
     configured_project_id: str | None,
+    raw_body: bytes = b"",
     enable_diagnostics: bool = False,
 ) -> None:
     """Verify an inbound SignalWire webhook.
@@ -232,6 +238,7 @@ def verify_signalwire_request(
             signature_headers=signature_headers,
             url_candidates=url_candidates,
             form_fields=form_fields,
+            raw_body=raw_body,
         )
 
     _fail(matched_variants)

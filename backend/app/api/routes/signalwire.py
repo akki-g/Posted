@@ -79,6 +79,7 @@ async def receive(
                 form_fields=form_fields,
                 headers=request.headers,
                 configured_project_id=settings.signalwire_project_id,
+                raw_body=raw_body,
                 enable_diagnostics=settings.signalwire_signature_diagnostics,
             )
         except InvalidSignalWireSignatureError as exc:
