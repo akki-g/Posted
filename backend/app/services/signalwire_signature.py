@@ -4,8 +4,11 @@ SignalWire's Compatibility API sends inbound SMS callbacks signed the same
 way Twilio signs LaML requests: HMAC-SHA1 over the exact webhook URL followed
 by every POST parameter (key then value, sorted by key, no separators),
 base64-encoded, in either `X-Twilio-Signature` or `X-SignalWire-Signature`.
-This is the only scheme confirmed against production traffic; the
-`-sha256` variant headers SignalWire also sends are not yet documented
+Per Twilio's own official `RequestValidator` source, the URL is checked both
+with and without an explicit default port (`:443`/`:80`), since signature
+generation on the provider's back end is documented as inconsistent about
+including it. This is the only scheme confirmed against production traffic;
+the `-sha256` variant headers SignalWire also sends are not yet documented
 against our token and are only used for diagnostic matching, never accepted.
 """
 
@@ -16,6 +19,7 @@ import hmac
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 LEGACY_SIGNATURE_HEADERS = (
     "x-twilio-signature",
@@ -81,6 +85,31 @@ def validate_legacy_signature(
 ) -> bool:
     expected = calculate_legacy_signature(token=token, url=url, form_fields=form_fields)
     return hmac.compare_digest(expected, signature.strip())
+
+
+def _with_explicit_port(url: str) -> str:
+    """Add the scheme's default port (443/80) if the URL doesn't have one."""
+    parsed = urlparse(url)
+    if parsed.port:
+        return url
+    port = 443 if parsed.scheme == "https" else 80
+    return parsed._replace(netloc=f"{parsed.netloc}:{port}").geturl()
+
+
+def _without_explicit_port(url: str) -> str:
+    """Strip an explicit port from the URL, if present."""
+    parsed = urlparse(url)
+    if not parsed.port:
+        return url
+    return parsed._replace(netloc=parsed.netloc.split(":")[0]).geturl()
+
+
+def url_port_variants(url: str) -> tuple[str, str]:
+    """Twilio's official `RequestValidator` checks the signature against the
+    request URL both with and without an explicit `:443`/`:80` port, since
+    "sig generation on the back end is inconsistent" (per Twilio's own
+    source). Returns (with_port, without_port); one may equal `url` itself."""
+    return _with_explicit_port(url), _without_explicit_port(url)
 
 
 def _collect_signature_headers(headers: Mapping[str, str]) -> dict[str, str]:
@@ -180,10 +209,13 @@ def verify_signalwire_request(
 
     for header_name in LEGACY_SIGNATURE_HEADERS:
         received = signature_headers.get(header_name)
-        if received and validate_legacy_signature(
-            token=token, url=configured_url, form_fields=form_fields, signature=received
-        ):
-            return
+        if not received:
+            continue
+        for url_variant in url_port_variants(configured_url):
+            if validate_legacy_signature(
+                token=token, url=url_variant, form_fields=form_fields, signature=received
+            ):
+                return
 
     matched_variants: tuple[SignatureMatch, ...] = ()
     if enable_diagnostics:
@@ -192,6 +224,9 @@ def verify_signalwire_request(
             url_candidates["configured_without_trailing_slash"] = configured_url[:-1]
         else:
             url_candidates["configured_with_trailing_slash"] = configured_url + "/"
+        with_port, without_port = url_port_variants(configured_url)
+        url_candidates["configured_with_port"] = with_port
+        url_candidates["configured_without_port"] = without_port
         matched_variants = _diagnose_matches(
             token=token,
             signature_headers=signature_headers,

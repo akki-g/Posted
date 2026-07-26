@@ -80,6 +80,21 @@ def test_trailing_slash_changes_the_signature() -> None:
         _verify(configured_url=URL + "/", headers={"x-twilio-signature": signature})
 
 
+def test_signature_computed_with_explicit_port_is_accepted() -> None:
+    # Mirrors Twilio's own RequestValidator, which checks both variants
+    # because signature generation on the provider's side is inconsistent
+    # about including the default port.
+    ported_url = "https://example.com:443/api/v1/webhooks/signalwire"
+    signature = _sign(ported_url, FORM_FIELDS)
+    _verify(configured_url=URL, headers={"x-twilio-signature": signature})
+
+
+def test_signature_computed_without_explicit_port_is_accepted() -> None:
+    configured_url_with_port = "https://example.com:443/api/v1/webhooks/signalwire"
+    signature = _sign(URL, FORM_FIELDS)  # signed without a port
+    _verify(configured_url=configured_url_with_port, headers={"x-twilio-signature": signature})
+
+
 def test_missing_signature_fails() -> None:
     with pytest.raises(InvalidSignalWireSignatureError):
         _verify(headers={})
