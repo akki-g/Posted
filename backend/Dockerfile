@@ -20,6 +20,7 @@ RUN useradd --system --create-home --uid 10001 posted
 WORKDIR /app
 COPY --from=builder --chown=posted:posted /app/.venv /app/.venv
 COPY --from=builder --chown=posted:posted /app/app /app/app
+COPY --chown=posted:posted scripts ./scripts
 COPY --from=builder --chown=posted:posted /app/pyproject.toml /app/uv.lock ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
