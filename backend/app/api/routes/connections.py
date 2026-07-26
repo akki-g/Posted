@@ -4,9 +4,9 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_app_settings, get_current_user_id, get_db
@@ -17,7 +17,7 @@ from app.api.schemas import (
     SyncRequest,
 )
 from app.config import Settings
-from app.db.models import BrokerageConnection
+from app.db.models import BrokerageConnection, SyncRun
 from app.providers.plaid.client import PlaidClient
 from app.providers.schwab.client import SchwabTraderClient
 from app.providers.schwab.oauth import (
@@ -247,6 +247,46 @@ async def sync_connection(
     )
 
 
+@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_connection(
+    connection_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+) -> Response:
+    connection = await session.scalar(
+        select(BrokerageConnection).where(
+            BrokerageConnection.id == connection_id,
+            BrokerageConnection.user_id == user_id,
+        )
+    )
+    if connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    access_token: str | None = None
+    if connection.provider == "plaid_investments":
+        stored = await BrokerageCredentialStore(
+            session=session, vault=TokenVault(settings.app_secret.get_secret_value())
+        ).load(connection_id=connection.id)
+        if stored is not None:
+            access_token = stored.access_token
+
+    # Commit the read-only transaction before making any outbound network call.
+    await session.commit()
+
+    if access_token is not None:
+        try:
+            await _plaid_client(settings).remove_item(access_token)
+        except Exception:  # noqa: BLE001 - best-effort revoke; local delete proceeds regardless
+            logger.warning("plaid_inv_item_remove_failed", connection_id=str(connection.id))
+
+    # schwab: local delete only (no revoke wired)
+    await session.execute(delete(SyncRun).where(SyncRun.connection_id == connection.id))
+    await session.delete(connection)  # cascades accounts -> positions
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 async def _sync_news_best_effort(
     session: AsyncSession, *, user_id: UUID, settings: Settings
 ) -> None:
@@ -277,6 +317,21 @@ def _schwab_client(settings: Settings) -> SchwabOAuthClient:
         client_id=settings.schwab_client_id,
         client_secret=settings.schwab_client_secret,
         redirect_uri=settings.schwab_redirect_uri,
+    )
+
+
+def _plaid_client(settings: Settings) -> PlaidClient:
+    # Inlined rather than imported from routes/plaid.py to keep this module
+    # independent of the (financial-account) Plaid connections route.
+    if not settings.plaid_client_id or not settings.plaid_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Add Plaid Sandbox credentials before connecting an account.",
+        )
+    return PlaidClient(
+        client_id=settings.plaid_client_id,
+        secret=settings.plaid_secret,
+        environment=settings.plaid_environment,
     )
 
 
