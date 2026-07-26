@@ -13,6 +13,10 @@ dependencies = [
   "httpx>=0.28.0",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.10.0",
+  # Required by the SignalWire webhook's request.form() parsing. Was previously
+  # only present transitively via a dev-group package, so the prod image
+  # (uv sync --no-dev) lacked it and inbound SMS 500'd on form parse.
+  "python-multipart>=0.0.9",
   "sqlalchemy[asyncio]>=2.0.41",
   "structlog>=25.4.0",
   "tenacity>=9.1.0",
