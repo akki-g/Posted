@@ -2,19 +2,21 @@ from datetime import datetime
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_app_settings, get_current_user_id, get_db
 from app.api.schemas import ConnectionStatus, PlaidExchangeRequest, PlaidLinkTokenResponse
 from app.config import Settings
-from app.db.models import BrokerageConnection
+from app.db.models import BrokerageAccount, BrokerageConnection
 from app.providers.plaid.client import PlaidClient
 from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
 
 router = APIRouter(prefix="/connections/plaid-investments", tags=["connections"])
+logger = structlog.get_logger()
 
 
 def _plaid_client(settings: Settings) -> PlaidClient:
@@ -83,31 +85,49 @@ async def exchange_plaid_investments_token(
     try:
         exchange = await client.exchange_public_token(request.public_token)
         raw_accounts = await client.get_accounts(exchange.access_token)
+        institution_id = (await client.get_item(exchange.access_token)).get("institution_id")
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Plaid could not connect this brokerage.",
         ) from exc
 
-    connection = await session.scalar(
-        select(BrokerageConnection).where(
-            BrokerageConnection.user_id == user_id,
-            BrokerageConnection.provider == "plaid_investments",
+    connection = (
+        await session.scalar(
+            select(BrokerageConnection).where(
+                BrokerageConnection.user_id == user_id,
+                BrokerageConnection.provider == "plaid_investments",
+                BrokerageConnection.institution_id == institution_id,
+            )
         )
+        if institution_id
+        else None
+    )
+    store = BrokerageCredentialStore(
+        session=session, vault=TokenVault(settings.app_secret.get_secret_value())
     )
     if connection is None:
         connection = BrokerageConnection(
             user_id=user_id, provider="plaid_investments",
+            institution_id=institution_id,
             display_name="Plaid brokerage", status="connected",
         )
         session.add(connection)
         await session.flush()
     else:
+        prev = await store.load(connection_id=connection.id)
+        await session.commit()  # end the implicit read txn before the provider call
+        if prev is not None:
+            try:
+                await client.remove_item(prev.access_token)
+            except Exception:  # noqa: BLE001 - refresh proceeds regardless
+                logger.warning("plaid_inv_old_item_remove_failed", connection_id=str(connection.id))
         connection.status = "connected"
+        await session.execute(
+            delete(BrokerageAccount).where(BrokerageAccount.connection_id == connection.id)
+        )  # cascades positions; next sync repopulates
+        await session.flush()
 
-    store = BrokerageCredentialStore(
-        session=session, vault=TokenVault(settings.app_secret.get_secret_value())
-    )
     await store.save(connection_id=connection.id, access_token=exchange.access_token)
     await session.commit()
 
