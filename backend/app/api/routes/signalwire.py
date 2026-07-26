@@ -1,49 +1,31 @@
 """Inbound SignalWire SMS webhook.
 
 SignalWire posts inbound messages as application/x-www-form-urlencoded (the
-Twilio-compatible LaML shape) and signs the request with an HMAC-SHA1 header,
-`X-SignalWire-Signature`. The signed string is the exact request URL followed
-by each POST parameter sorted by key and concatenated as key+value.
+Twilio-compatible LaML shape) and signs the request the same way Twilio signs
+LaML requests. See `app.services.signalwire_signature` for the verified
+construction and the diagnostic sweep used while pinning down the exact
+scheme in production.
 """
 
-import base64
-import hashlib
-import hmac
+from urllib.parse import parse_qsl
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 
 from app.api.deps import get_app_settings
 from app.config import Settings
+from app.services.signalwire_signature import (
+    InvalidSignalWireSignatureError,
+    verify_signalwire_request,
+)
 from app.services.sms import process_inbound_sms
 
 router = APIRouter(prefix="/webhooks/signalwire", tags=["signalwire"])
 logger = structlog.get_logger()
 
 
-def _expected_signature(*, url: str, params: dict[str, str], token: str) -> str:
-    data = url + "".join(key + params[key] for key in sorted(params))
-    digest = hmac.new(token.encode(), data.encode("utf-8"), hashlib.sha1).digest()
-    return base64.b64encode(digest).decode()
-
-
-def verify_signalwire_signature(
-    *, url: str, params: dict[str, str], signature: str | None, settings: Settings
-) -> None:
-    """Verify the Twilio-compatible `X-SignalWire-Signature` HMAC-SHA1 header."""
-    if settings.signalwire_allow_unsigned_webhooks and settings.app_env == "development":
-        return
-    if not settings.signalwire_api_token or not signature:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing SignalWire signature."
-        )
-    expected = _expected_signature(
-        url=url, params=params, token=settings.signalwire_api_token.get_secret_value()
-    )
-    if not hmac.compare_digest(expected, signature):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid SignalWire signature."
-        )
+def _unsigned_webhooks_allowed(settings: Settings) -> bool:
+    return settings.signalwire_allow_unsigned_webhooks and settings.app_env == "development"
 
 
 async def _process_message(request: Request, *, from_number: str, body: str) -> None:
@@ -62,74 +44,73 @@ async def receive(
     background_tasks: BackgroundTasks,
 ) -> Response:
     settings = get_app_settings(request)
-    form = await request.form()
-    params = {key: str(value) for key, value in form.items()}
-    # SignalWire signs the public URL it delivered to; behind a tunnel that is
-    # not request.url, so prefer the configured public webhook URL when set.
-    url = settings.signalwire_webhook_url or str(request.url)
-    # SignalWire's cXML API sends BOTH its own signature and the Twilio-compatible
-    # X-Twilio-Signature. Our verifier implements Twilio's exact scheme (URL +
-    # sorted params, HMAC-SHA1, base64), so validate the Twilio header first; the
-    # SignalWire-branded header uses a different construction and won't match this.
-    signature = request.headers.get("x-twilio-signature") or request.headers.get(
-        "x-signalwire-signature"
-    )
+
+    raw_body = await request.body()
     try:
-        verify_signalwire_signature(
-            url=url,
-            params=params,
-            signature=signature,
-            settings=settings,
+        raw_body_text = raw_body.decode("utf-8")
+        form_fields = tuple(
+            parse_qsl(
+                raw_body_text,
+                keep_blank_values=True,
+                encoding="utf-8",
+                errors="strict",
+            )
         )
-    except HTTPException:
-        # PII-safe rejection diagnostic (kept intentionally): on a rejected signature,
-        # report which signing string/algorithm/encoding (if any) the configured
-        # api_token can reproduce, so a production 401 is diagnosable without a debug
-        # session. If nothing matches, either SignalWire is signing with a different
-        # secret than the REST api_token, or SIGNALWIRE_WEBHOOK_URL does not exactly
-        # match the public URL SignalWire signed. Never logs headers, message bodies,
-        # or the raw signature.
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed SignalWire webhook body.",
+        ) from exc
+
+    if not _unsigned_webhooks_allowed(settings):
+        # SignalWire signs the public URL it delivered to; behind a reverse
+        # proxy request.url is not that URL, so prefer the configured one.
+        configured_url = settings.signalwire_webhook_url or str(request.url)
         token = (
             settings.signalwire_api_token.get_secret_value()
             if settings.signalwire_api_token
             else ""
         )
-        sorted_join = "".join(k + params[k] for k in sorted(params))
-        order_join = "".join(k + params[k] for k in params)
-        candidates = {
-            "configured_sorted": url + sorted_join,
-            "configured_slash_sorted": url + "/" + sorted_join,
-            "request_sorted": str(request.url) + sorted_join,
-            "configured_order": url + order_join,
-            "url_only": url,
-        }
-        # Test EVERY signature header SignalWire sent against every candidate
-        # signing string / algo / encoding, so a match tells us the exact
-        # (header, string, algorithm) combination the verifier should use.
-        sig_headers = {
-            name: value
-            for name, value in request.headers.items()
-            if "signature" in name.lower()
-        }
-        matches = []
-        for header_name, header_val in sig_headers.items():
-            for cand_name, data in candidates.items():
-                for algo in ("sha1", "sha256"):
-                    digest = hmac.new(token.encode(), data.encode("utf-8"), algo).digest()
-                    if base64.b64encode(digest).decode() == header_val:
-                        matches.append(f"{header_name}::{cand_name}/{algo}/base64")
-                    if digest.hex() == header_val:
-                        matches.append(f"{header_name}::{cand_name}/{algo}/hex")
-        logger.warning(
-            "signalwire_signature_rejected",
-            matched_variants=matches or "NONE",
-            param_keys=sorted(params),
-            configured_url=url,
-            signature_header_names=sorted(sig_headers),
-            received_len=len(signature) if signature else 0,
-        )
-        raise
+        try:
+            verify_signalwire_request(
+                token=token,
+                configured_url=configured_url,
+                request_url=str(request.url),
+                form_fields=form_fields,
+                headers=request.headers,
+                configured_project_id=settings.signalwire_project_id,
+                enable_diagnostics=settings.signalwire_signature_diagnostics,
+            )
+        except InvalidSignalWireSignatureError as exc:
+            details = exc.details
+            logger.warning(
+                "signalwire_signature_rejected",
+                header_names=details.header_names,
+                header_lengths=dict(details.header_lengths),
+                matched_variants=(
+                    [
+                        {
+                            "header": match.header_name,
+                            "candidate": match.candidate_name,
+                            "algorithm": match.algorithm,
+                            "encoding": match.encoding,
+                        }
+                        for match in details.matched_variants
+                    ]
+                    or "NONE"
+                ),
+                account_sid_matches_project=details.account_sid_matches_project,
+                configured_url_matches_request_url=details.configured_url_matches_request_url,
+                duplicate_parameter_keys=details.duplicate_parameter_keys,
+                parameter_keys=details.parameter_keys,
+                configured_url=configured_url,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid SignalWire signature.",
+            ) from exc
 
+    params = dict(form_fields)
     from_number = params.get("From")
     body = params.get("Body")
     # Status callbacks and other events lack a message body; ignore them.

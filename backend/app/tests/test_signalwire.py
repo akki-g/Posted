@@ -1,18 +1,18 @@
-import base64
-import hashlib
-import hmac
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.api.routes.signalwire import verify_signalwire_signature
 from app.config import Settings
 from app.db.base import Base
 from app.db.models import SmsLink, User
 from app.db.session import create_engine, create_session_factory
+from app.main import create_app
+from app.services.signalwire_signature import calculate_legacy_signature
 from app.services.sms import find_verified_user, process_inbound_sms, section_for_sms
 
 TOKEN = "test-signalwire-token"  # noqa: S105 - fixture value, not a real secret
@@ -20,54 +20,16 @@ URL = "https://example.trycloudflare.com/api/v1/webhooks/signalwire"
 
 
 def _sign(url: str, params: dict[str, str], token: str = TOKEN) -> str:
-    data = url + "".join(key + params[key] for key in sorted(params))
-    digest = hmac.new(token.encode(), data.encode("utf-8"), hashlib.sha1).digest()
-    return base64.b64encode(digest).decode()
+    return calculate_legacy_signature(token=token, url=url, form_fields=tuple(params.items()))
 
 
-def _settings() -> Settings:
-    # Force signed-webhook enforcement so these tests exercise real signature
-    # verification regardless of the ambient .env, which enables the dev bypass
-    # (SIGNALWIRE_ALLOW_UNSIGNED_WEBHOOKS=true) for local manual testing.
-    return Settings(signalwire_api_token=TOKEN, signalwire_allow_unsigned_webhooks=False)
-
-
-def test_signature_verification_accepts_a_valid_signature() -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "PORTFOLIO"}
-
-    verify_signalwire_signature(
-        url=URL, params=params, signature=_sign(URL, params), settings=_settings()
-    )
-
-
-def test_signature_verification_rejects_a_tampered_param() -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "PORTFOLIO"}
-    signature = _sign(URL, params)
-    tampered = {**params, "Body": "SPENDING"}
-
-    with pytest.raises(HTTPException, match="Invalid SignalWire signature"):
-        verify_signalwire_signature(
-            url=URL, params=tampered, signature=signature, settings=_settings()
-        )
-
-
-def test_signature_verification_rejects_a_missing_header() -> None:
-    with pytest.raises(HTTPException, match="Missing SignalWire signature"):
-        verify_signalwire_signature(
-            url=URL, params={"Body": "hi"}, signature=None, settings=_settings()
-        )
-
-
-@pytest.mark.parametrize(
-    ("message", "expected"),
-    [
+def test_sms_section_routing() -> None:
+    for message, expected in [
         ("show my spending", "money"),
         ("why did AAPL stock move?", "investing"),
         ("what are the headlines?", "general"),
-    ],
-)
-def test_sms_section_routing(message: str, expected: str) -> None:
-    assert section_for_sms(message) == expected
+    ]:
+        assert section_for_sms(message) == expected
 
 
 async def _session_factory():
@@ -166,3 +128,79 @@ async def test_process_inbound_sms_stop_persists_and_blocks_future_questions(mon
         assert row.opted_out is False
 
     await engine.dispose()
+
+
+# --- Route-level webhook tests -------------------------------------------------
+
+
+@pytest.fixture
+async def signalwire_client() -> AsyncIterator[AsyncClient]:
+    settings = Settings(
+        app_env="test",
+        database_url="sqlite+aiosqlite:///:memory:",
+        signalwire_api_token=TOKEN,
+        signalwire_project_id="test-project",
+        signalwire_webhook_url=URL,
+        signalwire_allow_unsigned_webhooks=False,
+    )
+    app = create_app(settings)
+    async with (
+        LifespanManager(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        yield http
+
+
+async def _post_signed(client: AsyncClient, params: dict[str, str], *, signature: str | None):
+    headers = {}
+    if signature is not None:
+        headers["X-Twilio-Signature"] = signature
+    return await client.post(
+        "/api/v1/webhooks/signalwire",
+        data=params,
+        headers=headers,
+    )
+
+
+async def test_valid_signed_callback_returns_204(signalwire_client: AsyncClient) -> None:
+    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
+    response = await _post_signed(signalwire_client, params, signature=_sign(URL, params))
+    assert response.status_code == 204
+
+
+async def test_invalid_signature_returns_401(signalwire_client: AsyncClient) -> None:
+    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
+    response = await _post_signed(signalwire_client, params, signature="not-a-real-signature")
+    assert response.status_code == 401
+
+
+async def test_missing_signature_returns_401(signalwire_client: AsyncClient) -> None:
+    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
+    response = await _post_signed(signalwire_client, params, signature=None)
+    assert response.status_code == 401
+
+
+async def test_tampered_body_returns_401(signalwire_client: AsyncClient) -> None:
+    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
+    signature = _sign(URL, params)
+    tampered = {**params, "Body": "bye"}
+    response = await _post_signed(signalwire_client, tampered, signature=signature)
+    assert response.status_code == 401
+
+
+async def test_status_callback_without_body_returns_204(signalwire_client: AsyncClient) -> None:
+    params = {"MessageSid": "SMxxxx", "MessageStatus": "delivered"}
+    response = await _post_signed(signalwire_client, params, signature=_sign(URL, params))
+    assert response.status_code == 204
+
+
+async def test_malformed_utf8_body_returns_400(signalwire_client: AsyncClient) -> None:
+    response = await signalwire_client.post(
+        "/api/v1/webhooks/signalwire",
+        content=b"Body=\xff\xfe",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": "irrelevant",
+        },
+    )
+    assert response.status_code == 400

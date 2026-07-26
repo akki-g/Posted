@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # localhost URL, so signature checks need the public URL to reconstruct it.
     signalwire_webhook_url: str | None = None
     signalwire_allow_unsigned_webhooks: bool = False
+    # Temporary: logs a safe (no secrets/PII) sweep of which signature header,
+    # URL variant, algorithm, and encoding a rejected webhook's signature
+    # would have matched, to pin down production signing mismatches. Turn
+    # off once the verified scheme is confirmed - it's an extra HMAC sweep
+    # per rejected request.
+    signalwire_signature_diagnostics: bool = False
 
     @field_validator("frontend_origins", mode="before")
     @classmethod
