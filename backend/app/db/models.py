@@ -63,6 +63,7 @@ class BrokerageConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    institution_id: Mapped[str | None] = mapped_column(String(64), index=True)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="demo", nullable=False)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -110,6 +111,7 @@ class FinancialConnection(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     provider: Mapped[str] = mapped_column(String(40), nullable=False)
     provider_item_id: Mapped[str | None] = mapped_column(String(160))
+    institution_id: Mapped[str | None] = mapped_column(String(64), index=True)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="demo", nullable=False)
     cursor: Mapped[str | None] = mapped_column(Text)

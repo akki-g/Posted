@@ -183,6 +183,23 @@ outside local development. `STOP`/`START` replies are exercised for UI testing;
 they are not durable opt-out storage yet, so do not use this bridge for real
 customer notifications.
 
+## Schema changes without Alembic
+
+This project has no Alembic migrations; `Base.metadata.create_all` only creates
+missing tables and never `ALTER`s existing ones. A fresh dev SQLite database
+picks up new columns automatically via `create_all`, but the existing prod
+Postgres database needs a one-off manual migration at/before deploy whenever a
+column is added to an existing table. For example, adding the nullable, indexed
+`institution_id` column to `financial_connections` and `brokerage_connections`
+required running:
+
+```sql
+ALTER TABLE financial_connections ADD COLUMN IF NOT EXISTS institution_id VARCHAR(64);
+ALTER TABLE brokerage_connections ADD COLUMN IF NOT EXISTS institution_id VARCHAR(64);
+CREATE INDEX IF NOT EXISTS ix_financial_connections_institution_id ON financial_connections (institution_id);
+CREATE INDEX IF NOT EXISTS ix_brokerage_connections_institution_id ON brokerage_connections (institution_id);
+```
+
 ## Useful commands
 
 ```bash
