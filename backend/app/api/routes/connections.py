@@ -17,7 +17,7 @@ from app.api.schemas import (
     SyncRequest,
 )
 from app.config import Settings
-from app.db.models import BrokerageConnection, SyncRun
+from app.db.models import BrokerageConnection, BrokerageCredential, SyncRun
 from app.providers.plaid.client import PlaidClient
 from app.providers.schwab.client import SchwabTraderClient
 from app.providers.schwab.oauth import (
@@ -281,6 +281,13 @@ async def unlink_connection(
             logger.warning("plaid_inv_item_remove_failed", connection_id=str(connection.id))
 
     # schwab: local delete only (no revoke wired)
+    # BrokerageConnection has no ORM relationship to BrokerageCredential, and the
+    # DB-level ON DELETE CASCADE on that FK is not enforced by SQLite (no
+    # PRAGMA foreign_keys=ON), so the credential row must be deleted explicitly
+    # here to avoid leaving an orphaned encrypted-token blob behind on unlink.
+    await session.execute(
+        delete(BrokerageCredential).where(BrokerageCredential.connection_id == connection.id)
+    )
     await session.execute(delete(SyncRun).where(SyncRun.connection_id == connection.id))
     await session.delete(connection)  # cascades accounts -> positions
     await session.commit()

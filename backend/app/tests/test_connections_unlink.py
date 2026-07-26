@@ -11,6 +11,7 @@ from app.db.base import Base
 from app.db.models import (
     BrokerageAccount,
     BrokerageConnection,
+    BrokerageCredential,
     Position,
     Security,
     SyncRun,
@@ -166,6 +167,17 @@ async def test_unlink_plaid_investments_connection_calls_remove_item_and_removes
         assert (
             await session.scalar(
                 select(func.count()).select_from(BrokerageConnection)
+            )
+        ) == 0
+        # Regression: BrokerageConnection has no ORM relationship to
+        # BrokerageCredential, and the DB-level ON DELETE CASCADE on that FK
+        # is not enforced by SQLite -- the encrypted token row must be
+        # deleted explicitly by the handler, or it's orphaned after unlink.
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(BrokerageCredential).where(
+                    BrokerageCredential.connection_id == connection_id
+                )
             )
         ) == 0
     await engine.dispose()
