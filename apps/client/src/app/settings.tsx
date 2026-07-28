@@ -527,6 +527,7 @@ export default function SettingsScreen() {
             caption="Upcoming bills and unusual money activity"
             control={
               <Switch
+                accessibilityLabel="Push notifications"
                 value={preferences.data?.push_enabled ?? true}
                 disabled={!preferences.data || updatePreferences.isPending}
                 onValueChange={(value) => updatePreference({ push_enabled: value })}
@@ -540,6 +541,7 @@ export default function SettingsScreen() {
             caption="Daily money summary at 8:00 AM"
             control={
               <Switch
+                accessibilityLabel="Morning briefing email"
                 value={preferences.data?.email_digest_enabled ?? false}
                 disabled={!preferences.data || updatePreferences.isPending}
                 onValueChange={(value) => updatePreference({ email_digest_enabled: value })}

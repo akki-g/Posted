@@ -8,7 +8,9 @@ const AUTO_SYNC_STALE_MS = 5 * 60 * 1000;
 
 type SyncableConnection = { id: string; last_synced_at: string | null; demo: boolean };
 
-function isStale(connections: SyncableConnection[]): boolean {
+// Exported for direct unit testing (apps/client/src/lib/useConnectionSync.test.ts)
+// — pure functions, no need to render a component to cover their logic.
+export function isStale(connections: SyncableConnection[]): boolean {
   return connections.some((connection) => {
     if (!connection.last_synced_at) return true;
     return Date.now() - new Date(connection.last_synced_at).getTime() > AUTO_SYNC_STALE_MS;
@@ -17,7 +19,7 @@ function isStale(connections: SyncableConnection[]): boolean {
 
 // Sync every live connection; fall back to a single demo connection (the
 // backend runs its own demo-data sync path for it) when there's no live one.
-function targetConnections(connections: SyncableConnection[]): SyncableConnection[] {
+export function targetConnections(connections: SyncableConnection[]): SyncableConnection[] {
   const live = connections.filter((connection) => !connection.demo);
   return live.length > 0 ? live : connections.slice(0, 1);
 }

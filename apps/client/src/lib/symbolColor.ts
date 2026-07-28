@@ -1,14 +1,9 @@
-import { colors } from '@/theme/tokens';
+import { chartCategorical } from '@/theme/tokens';
 
-const PALETTE = [
-  colors.teal,
-  colors.blue,
-  colors.purple,
-  colors.orange,
-  colors.indigo,
-  colors.pink,
-  colors.brown,
-] as const;
+// Categorical identity color only — never a semantic/state color (teal and
+// blue are claimed roles elsewhere and teal reads as gray in a categorical
+// role; see theme/tokens.ts's `chartCategorical` doc comment).
+const PALETTE = chartCategorical;
 
 function hashString(value: string): number {
   let hash = 7;
