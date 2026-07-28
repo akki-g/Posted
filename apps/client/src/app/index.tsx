@@ -321,7 +321,7 @@ function AttentionBand({ dashboard, money: moneyData }: { dashboard: DashboardRe
           ))}
           {events.length > 0 ? (
             <View style={styles.attentionFooter}>
-              <TextLink label="Open feed" onPress={() => router.push('/feed')} />
+              <TextLink label="Open feed" onPress={() => router.push('/portfolio?tab=feed')} />
             </View>
           ) : null}
         </>
@@ -336,7 +336,7 @@ function LedgerBand({ lens, dashboard, money: moneyData }: { lens: Lens; dashboa
     <Panel style={styles.ledgerPanel}>
       <View style={styles.ledgerHeader}>
         <Text style={styles.ledgerTitle}>Holdings</Text>
-        <TextLink label="All holdings" onPress={() => router.push('/holdings')} />
+        <TextLink label="All holdings" onPress={() => router.push('/portfolio?tab=holdings')} />
       </View>
       <HoldingsList holdings={dashboard.top_holdings} limit={6} compact />
     </Panel>

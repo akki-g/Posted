@@ -58,7 +58,7 @@ export function MarketSearch({
     setFocused(false);
     setValue(symbol);
     if (destination === 'insiders') {
-      router.push({ pathname: '/insiders', params: { symbol } });
+      router.push({ pathname: '/portfolio', params: { tab: 'insiders', symbol } });
     } else {
       router.push({ pathname: '/stock/[symbol]', params: { symbol } });
     }

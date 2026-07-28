@@ -35,6 +35,7 @@ export default function RootLayout() {
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />
+            <Stack.Screen name="portfolio" />
             <Stack.Screen name="login" />
             <Stack.Screen name="login/callback" />
             <Stack.Screen name="feed" />

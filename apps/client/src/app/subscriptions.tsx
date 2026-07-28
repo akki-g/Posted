@@ -1,21 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { CalendarClock, CircleDollarSign, ShieldCheck } from 'lucide-react-native';
 import { useEffect } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { SubscriptionList } from '@/components/MoneyLists';
-import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
+import { ErrorState, LoadingState, Panel, SectionHeader, StatTile } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money } from '@/lib/format';
-import { cardShadow, colors, radius } from '@/theme/tokens';
+import { useBreakpoint } from '@/theme/useBreakpoint';
+import { colors, roles, spacing } from '@/theme/tokens';
 
 export default function SubscriptionsScreen() {
   useEffect(() => setAssistantSection('money'), []);
-  const { width } = useWindowDimensions();
-  const desktop = width >= 900;
-  const mobile = width < 700;
+  const { desktop, compact } = useBreakpoint();
   const query = useQuery({ queryKey: ['subscriptions'], queryFn: api.subscriptions });
   const monthly = (query.data ?? []).reduce(
     (total, stream) => total + monthlyEquivalent(stream.frequency, Number(stream.average_amount)),
@@ -25,50 +24,37 @@ export default function SubscriptionsScreen() {
 
   return (
     <AppShell
-      title={mobile ? 'Recurring' : 'Recurring charges'}
+      title={compact ? 'Recurring' : 'Recurring charges'}
       eyebrow="PREDICTABLE BILLS"
       refreshing={query.isRefetching}
       onRefresh={() => query.refetch()}>
-      {mobile ? (
-        <>
-          <View style={styles.mobileHero}>
-            <Text style={styles.mobileHeroLabel}>ESTIMATED MONTHLY</Text>
-            <Text style={styles.mobileHeroValue}>{money(monthly)}</Text>
-            <Text style={styles.mobileHeroCaption}>{money(monthly * 12)} per year</Text>
-          </View>
-          <View style={styles.mobileSummaryRow}>
-            <SummaryMetric label="ACTIVE" value={String(query.data?.length ?? '—')} caption="streams" compact />
-            <SummaryMetric
-              label="NEXT"
-              value={next ? money(next.average_amount) : '—'}
-              caption={next?.merchant_name ?? 'Nothing upcoming'}
-              compact
-            />
-          </View>
-        </>
-      ) : (
-        <View style={styles.summaryRow}>
-          <SummaryMetric label="MONTHLY COMMITMENT" value={money(monthly)} caption={`${money(monthly * 12)} annualized`} />
-          <SummaryMetric label="ACTIVE STREAMS" value={String(query.data?.length ?? '—')} caption="Detected from posted activity" />
-          <SummaryMetric label="NEXT EXPECTED" value={next ? money(next.average_amount) : '—'} caption={next?.merchant_name ?? 'No upcoming charge'} />
-        </View>
-      )}
+      <View style={styles.summaryRow}>
+        <StatTile
+          label={compact ? 'MONTHLY' : 'MONTHLY COMMITMENT'}
+          value={money(monthly)}
+          caption={`${money(monthly * 12)}${compact ? '/yr' : ' annualized'}`}
+        />
+        <StatTile label={compact ? 'ACTIVE' : 'ACTIVE STREAMS'} value={String(query.data?.length ?? '—')} caption={compact ? 'streams' : 'Detected from posted activity'} />
+        {!compact ? (
+          <StatTile label="NEXT EXPECTED" value={next ? money(next.average_amount) : '—'} caption={next?.merchant_name ?? 'No upcoming charge'} />
+        ) : null}
+      </View>
 
       <View style={[styles.layout, !desktop && styles.stack]}>
-        <View style={[styles.panel, styles.listPanel]}>
+        <Panel style={styles.listPanel}>
           <SectionHeader title="Detected recurring activity" caption="Review before treating a charge as a subscription" />
           {query.isLoading ? <LoadingState label="Detecting recurring charges" /> : null}
           {query.isError ? <ErrorState message={query.error.message} retry={() => query.refetch()} /> : null}
           {query.data ? <SubscriptionList streams={query.data} /> : null}
-        </View>
+        </Panel>
 
         <View style={styles.insightsColumn}>
-          <View style={styles.panel}>
+          <Panel>
             <SectionHeader title="How detection works" caption="Evidence, not a provider label" />
             <Insight icon={<CalendarClock size={17} color={colors.tealDark} />} title="Timing cadence" caption="Looks for consistent gaps such as monthly or annual billing." />
             <Insight icon={<CircleDollarSign size={17} color={colors.tealDark} />} title="Amount stability" caption="Allows small changes without grouping unrelated purchases." />
             <Insight icon={<ShieldCheck size={17} color={colors.tealDark} />} title="Confidence score" caption="Requires repeated posted outflows and never counts pending charges." />
-          </View>
+          </Panel>
           <View style={styles.notice}>
             <Text style={styles.noticeLabel}>IMPORTANT</Text>
             <Text style={styles.noticeTitle}>Detection is not cancellation</Text>
@@ -88,16 +74,6 @@ function monthlyEquivalent(frequency: string, amount: number) {
   return amount;
 }
 
-function SummaryMetric({ label, value, caption, compact = false }: { label: string; value: string; caption: string; compact?: boolean }) {
-  return (
-    <View style={[styles.summaryTile, compact && styles.summaryTileCompact]}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
-      <Text style={styles.summaryCaption}>{caption}</Text>
-    </View>
-  );
-}
-
 function Insight({ icon, title, caption }: { icon: React.ReactNode; title: string; caption: string }) {
   return (
     <View style={styles.insightRow}>
@@ -111,35 +87,17 @@ function Insight({ icon, title, caption }: { icon: React.ReactNode; title: strin
 }
 
 const styles = StyleSheet.create({
-  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: colors.line, marginBottom: 16 },
-  summaryTile: { flex: 1, minWidth: 220, height: 118, padding: 18, backgroundColor: colors.surface },
-  summaryTileCompact: { minWidth: 0, height: 104, padding: 14, borderWidth: 1, borderColor: colors.line, borderRadius: 12 },
-  mobileHero: { backgroundColor: colors.navy, borderRadius: 16, padding: 22, marginBottom: 10 },
-  mobileHeroLabel: { color: '#8FA0B7', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  mobileHeroValue: { color: colors.white, fontSize: 34, fontWeight: '700', marginTop: 9, fontVariant: ['tabular-nums'] },
-  mobileHeroCaption: { color: '#AAB5C4', fontSize: 10, marginTop: 5 },
-  mobileSummaryRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  summaryLabel: { color: colors.inkFaint, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  summaryValue: { color: colors.ink, fontSize: 24, fontWeight: '700', marginTop: 15, fontVariant: ['tabular-nums'] },
-  summaryCaption: { color: colors.inkMuted, fontSize: 10, marginTop: 5 },
-  layout: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
+  layout: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   stack: { flexDirection: 'column' },
-  panel: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    ...cardShadow,
-  },
   listPanel: { flex: 1.45, width: '100%' },
-  insightsColumn: { flex: 1, width: '100%', gap: 16 },
-  insightRow: { minHeight: 84, padding: 16, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  insightsColumn: { flex: 1, width: '100%', gap: spacing.md },
+  insightRow: { minHeight: 84, padding: spacing.md, borderBottomWidth: 1, borderBottomColor: roles.borderHairline, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   insightIcon: { width: 36, height: 36, backgroundColor: colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
   insightCopy: { flex: 1 },
   insightTitle: { color: colors.ink, fontSize: 12, fontWeight: '700' },
   insightCaption: { color: colors.inkMuted, fontSize: 10, lineHeight: 15, marginTop: 4 },
-  notice: { padding: 18, borderLeftWidth: 3, borderLeftColor: colors.warning, backgroundColor: colors.warningSoft },
+  notice: { padding: spacing.md, borderLeftWidth: 3, borderLeftColor: colors.warning, backgroundColor: colors.warningSoft },
   noticeLabel: { color: colors.warning, fontSize: 8, fontWeight: '800', letterSpacing: 1 },
   noticeTitle: { color: colors.ink, fontSize: 13, fontWeight: '700', marginTop: 8 },
   noticeText: { color: colors.inkMuted, fontSize: 10, lineHeight: 16, marginTop: 6 },

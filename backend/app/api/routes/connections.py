@@ -1,4 +1,3 @@
-from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -19,7 +18,6 @@ from app.api.schemas import (
 from app.config import Settings
 from app.db.models import BrokerageConnection, BrokerageCredential, SyncRun
 from app.providers.plaid.client import PlaidClient
-from app.providers.schwab.client import SchwabTraderClient
 from app.providers.schwab.oauth import (
     SchwabOAuthClient,
     create_oauth_state,
@@ -27,66 +25,13 @@ from app.providers.schwab.oauth import (
 )
 from app.security.brokerage_credentials import BrokerageCredentialStore
 from app.security.vault import TokenVault
-from app.services.brokerage_sync import BrokerageSyncError, BrokerageSyncSummary
+from app.services.brokerage_sync import BrokerageSyncError
+from app.services.connection_sync import BROKERAGE_SYNC_ADAPTERS as _SYNC_ADAPTERS
 from app.services.dashboard import get_connections, run_demo_sync
 from app.services.news_sync import sync_portfolio_news
-from app.services.plaid_investments_sync import sync_plaid_investments_connection
-from app.services.schwab_sync import sync_schwab_connection
 
 router = APIRouter(prefix="/connections", tags=["connections"])
 logger = structlog.get_logger()
-
-
-async def _run_schwab_sync(
-    session: AsyncSession,
-    *,
-    connection: BrokerageConnection,
-    idempotency_key: str,
-    settings: Settings,
-) -> BrokerageSyncSummary:
-    return await sync_schwab_connection(
-        session,
-        connection=connection,
-        idempotency_key=idempotency_key,
-        credential_store=BrokerageCredentialStore(
-            session=session, vault=TokenVault(settings.app_secret.get_secret_value())
-        ),
-        oauth_client=_schwab_client(settings),
-        trader_factory=lambda access_token: SchwabTraderClient(access_token=access_token),
-    )
-
-
-async def _run_plaid_investments_sync(
-    session: AsyncSession,
-    *,
-    connection: BrokerageConnection,
-    idempotency_key: str,
-    settings: Settings,
-) -> BrokerageSyncSummary:
-    if not settings.plaid_client_id or not settings.plaid_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Add Plaid Sandbox credentials before syncing this brokerage.",
-        )
-    return await sync_plaid_investments_connection(
-        session,
-        connection=connection,
-        idempotency_key=idempotency_key,
-        credential_store=BrokerageCredentialStore(
-            session=session, vault=TokenVault(settings.app_secret.get_secret_value())
-        ),
-        client=PlaidClient(
-            client_id=settings.plaid_client_id,
-            secret=settings.plaid_secret,
-            environment=settings.plaid_environment,
-        ),
-    )
-
-
-_SYNC_ADAPTERS: dict[str, Callable[..., Awaitable[BrokerageSyncSummary]]] = {
-    "schwab": _run_schwab_sync,
-    "plaid_investments": _run_plaid_investments_sync,
-}
 
 
 @router.get("", response_model=list[ConnectionStatus])

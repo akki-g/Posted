@@ -23,6 +23,42 @@ def _timestamp(value: object) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+def _decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def map_plaid_account_values(raw: dict[str, Any]) -> dict[str, object]:
+    plaid_type = str(raw.get("type") or "other")
+    subtype = str(raw.get("subtype") or "") or None
+    if plaid_type == "depository" and subtype in {"checking", "savings"}:
+        account_type = subtype
+    elif plaid_type == "credit":
+        account_type = "credit_card"
+    elif plaid_type == "loan":
+        account_type = "loan"
+    else:
+        account_type = "other"
+    balances = raw.get("balances") or {}
+    current = _decimal(balances.get("current")) or Decimal("0")
+    currency = balances.get("iso_currency_code") or balances.get("unofficial_currency_code")
+    return {
+        "display_name": str(raw.get("official_name") or raw.get("name") or "Account"),
+        "mask": str(raw["mask"]) if raw.get("mask") else None,
+        "account_type": account_type,
+        "subtype": subtype,
+        "currency": str(currency or "USD").upper(),
+        "current_balance": current,
+        "available_balance": _decimal(balances.get("available")),
+        "credit_limit": _decimal(balances.get("limit")),
+        "is_active": True,
+    }
+
+
 def map_plaid_transaction(raw: dict[str, Any]) -> TransactionObservation:
     try:
         signed_amount = Decimal(str(raw["amount"]))

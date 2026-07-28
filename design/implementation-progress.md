@@ -79,11 +79,125 @@ nav model only makes sense with the Spine's needs in view).
   same `Panel`/`StatTile`/`IconButton`/`Band` primitives and the Explore
   nav model proven here.
 
-## Phase D–F — not started
+## Phase D — Core screens
 
-Per `design/migration-plan.md`: login redesign, read-mostly screens,
-Settings' `ConnectionRow` adoption, the two chart-bearing screens, supporting
-states, and cleanup/legacy removal remain.
+**Status**: done, uncommitted (working tree only, per current instruction not
+to commit). No dedicated commit yet.
+
+- `login.tsx`: replaced the centered-hero-plus-feature-cards layout
+  (`competitor-similarity-audit.md` finding #1) with a single-column
+  statement-style page whose hero *is* a labeled preview of the real Position
+  Spine (masked/example net-worth and holdings figures), landing directly
+  into the sign-in action instead of a marketing feature list.
+- `transactions.tsx`, `subscriptions.tsx`, `holdings.tsx`, `feed.tsx`,
+  `news.tsx`, `event/[id].tsx`: migrated onto `Panel`/`StatTile`/`FilterChip`/
+  `useBreakpoint()`, replaced hardcoded on-navy hex colors in the two dark
+  score cards (news detail, event detail) with the named `inkOnDark*`/
+  `hairlineOnDark`/`positiveOnDark` etc. tokens from Phase A, added focus
+  rings to search inputs that previously disabled the outline with nothing
+  replacing it.
+- `settings.tsx`: banking and investing connection lists now both use the
+  `ConnectionRow` primitive (closes the ~90%-duplicated block finding);
+  removed the now-dead `panel`/`connectionRow`/`demoStatus`/`unlinkButton`
+  style definitions and unused icon imports this freed up.
+- `insiders.tsx`, `stock/[symbol].tsx`: last, per the audit's risk ordering.
+  Panel/hero-card treatment migrated to the shared primitives; every
+  hardcoded on-navy hex color replaced with the named tokens (several were
+  literally the exact values already promoted into `theme/tokens.ts` from
+  this file during Phase A, so this was a direct swap, not a guess). Chart
+  interaction code (`SentimentChart`'s scrub, `StockPriceChart`,
+  `chartContextRef`) was **not** touched, per the frozen-contract warning in
+  `frontend-audit.md` §3.4/§3.8.
+- `AppShell.tsx` now consumes `useBreakpoint()` itself instead of computing
+  `desktop` inline — one less place duplicating the breakpoint logic it
+  otherwise enforces.
+- `README.md`'s "frontend visual language" paragraph updated to describe
+  what's actually shipped (was describing the pre-redesign system).
+
+**Verified**: typecheck clean, 27/27 tests pass, production web export
+builds successfully, after each screen and again at the end of the batch.
+**Not verified**: live rendering (see standing constraint below) — this is
+the largest batch of unverified-by-eye changes in the effort so far and
+should be the first thing checked in a real browser.
+
+**Deliberately not done in this pass**: collapsing Feed/News/Holdings/
+Insider activity into one tabbed "Portfolio detail" destination
+(`approved-design-system.md`'s IA target) — scoped down to a design-system
+migration of each screen in place, reachable via the new Explore panel,
+rather than a route-level merge. The four screens still exist as separate
+routes. This is the main remaining gap between what's implemented and the
+approved IA. **Update — now completed in Phase D.1 below.**
+
+## Phase D.1 — Portfolio detail tab merge (IA route consolidation)
+
+**Status**: done, uncommitted (working tree only, per current instruction not
+to commit). No dedicated commit yet. Closes the main IA gap flagged at the end
+of Phase D.
+
+- Collapsed the four separate routes (`feed`, `news`, `holdings`, `insiders`)
+  into one tabbed **Portfolio detail** destination at `app/portfolio.tsx`,
+  landing on the tab the entry point implies (`?tab=holdings|feed|news|insiders`,
+  default `holdings`; `?symbol=` deep-links straight into the Insiders tab).
+  Mirrors the shipped Position Spine pattern exactly: a `FilterChip` `tablist`
+  driven by `router.setParams` (no stack navigation), tab order
+  **Holdings · Feed · News · Insiders**.
+- New `lib/portfolioTab.ts` owns the tab set / labels / titles and a
+  `normalizePortfolioTab()` helper (default + unknown-value fallback), covered
+  by new `lib/portfolioTab.test.ts` (3 cases).
+- Each screen's body was extracted into `components/portfolio/{HoldingsTab,
+  FeedTab,NewsTab,InsidersTab}.tsx` — pure presentational units that render
+  without page chrome (the container owns `AppShell`, the page header, and the
+  tab row). Each keeps its own `useQuery` hooks, so only the active tab fetches.
+- The four old routes are now thin `<Redirect>` shims to `/portfolio?tab=…`
+  (the insiders shim forwards `?symbol=` through), matching the existing
+  `money.tsx`/`invest.tsx` redirect pattern for deep links and bookmarks.
+- `AppShell` Explore panel collapsed from 7 flat items to the four approved
+  destinations (**Portfolio detail · Transactions · Subscriptions · Settings**);
+  `assistantSectionForPath` now maps `/portfolio` → investing; three now-unused
+  icon imports removed. Five outbound navigation callsites repointed
+  (`index.tsx` ×2, `stock/[symbol].tsx` ×2, `MarketSearch.tsx` ×1).
+- Chart interaction code in InsidersTab (`SentimentChart`, `useChartScrub`,
+  and every subcomponent/style below the default export) was copied verbatim
+  and **not** touched, per the frozen-contract warning in `frontend-audit.md`
+  §3.4/§3.8. Only the top-level component (param plumbing + page chrome) changed.
+
+**Deliberate simplifications, flagged (not silently dropped — ask for them
+back if wanted):**
+- News tab: dropped `AppShell`'s pull-to-refresh; kept the in-body "Refresh
+  providers" button, which already triggers the same provider refresh.
+- Insiders tab: moved the desktop header search + refresh out of the page-header
+  action slot into an in-body tab-header row (now consistent with how the
+  Holdings tab renders `MarketSearch` in-body).
+- Insiders assistant context no longer includes the live "inspected sentiment
+  bar" detail (that state now lives inside `InsidersTab`, below the container
+  that owns `AppShell`). The symbol-aware context is otherwise preserved.
+- Unified eyebrow "PORTFOLIO DETAIL" across tabs; each tab keeps its original
+  full page title ("Holdings" / "Impact feed" / "News stories" / "Insider
+  activity").
+
+**Verified**: `npm run typecheck` clean, `npm run test` 30/30 pass (27 prior +
+3 new `portfolioTab` cases), `npm run export:web` builds the production bundle
+successfully.
+**Not verified**: live rendering — same standing constraint as every phase
+below; the tab switching, deep-link landing, and insiders auto-select should be
+the first things checked in a real logged-in browser session.
+
+## Phase E–F — not started
+
+Per `design/migration-plan.md`: supporting/partial-data states beyond what
+Phase C/D already covered, the SMS-assistant-visibility affordance
+(`product-workflows.md` finding f), and cleanup (delete now-unused exports,
+confirm no screen still hand-rolls a breakpoint outside the two content-
+specific exceptions noted below) remain.
+
+**Known remaining ad hoc breakpoints**: `insiders.tsx` and
+`stock/[symbol].tsx` still compute their own `width >= 980` /
+`width >= 760` cutoffs via raw `useWindowDimensions` rather than
+`useBreakpoint()`. Left as-is rather than force-fit into the shared
+breakpoint set, since these are genuine content-specific thresholds (e.g.
+"does the header search fit inline") that don't cleanly map to
+`compact`/`mobileNav`/`wide`/`assistantDock` — flagged here rather than
+silently left inconsistent.
 
 ## Standing constraint (all phases)
 

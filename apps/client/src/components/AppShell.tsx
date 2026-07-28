@@ -2,13 +2,10 @@ import { usePathname, useRouter } from 'expo-router';
 import {
   Compass,
   LayoutDashboard,
-  Newspaper,
   ReceiptText,
   Repeat2,
-  Rss,
   Settings2,
   Sparkles,
-  UserRoundSearch,
   WalletCards,
 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
@@ -21,7 +18,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,16 +26,10 @@ import { AssistantDrawer } from '@/components/AssistantDrawer';
 import { BrandMark } from '@/components/BrandMark';
 import { useAuth } from '@/lib/AuthContext';
 import type { AssistantSection } from '@/lib/assistantSection';
-import { breakpoints, colors, radius, roles, spacing } from '@/theme/tokens';
+import { useBreakpoint } from '@/theme/useBreakpoint';
+import { colors, radius, roles, spacing } from '@/theme/tokens';
 
-type AppPath =
-  | '/holdings'
-  | '/transactions'
-  | '/subscriptions'
-  | '/feed'
-  | '/news'
-  | '/insiders'
-  | '/settings';
+type AppPath = '/portfolio' | '/transactions' | '/subscriptions' | '/settings';
 
 type ExploreItem = {
   label: string;
@@ -49,14 +39,12 @@ type ExploreItem = {
 
 // The "encyclopedic" destinations — reached from the Explore panel rather
 // than as sidebar peers, per the approved IA (they're drill-downs on one
-// portfolio story, not co-equal top-level sections).
+// portfolio story, not co-equal top-level sections). Holdings / Feed / News /
+// Insider activity collapsed into the tabbed "Portfolio detail" destination.
 const exploreItems: ExploreItem[] = [
-  { label: 'Holdings', href: '/holdings', icon: WalletCards },
+  { label: 'Portfolio detail', href: '/portfolio', icon: WalletCards },
   { label: 'Transactions', href: '/transactions', icon: ReceiptText },
   { label: 'Subscriptions', href: '/subscriptions', icon: Repeat2 },
-  { label: 'Impact feed', href: '/feed', icon: Newspaper },
-  { label: 'News', href: '/news', icon: Rss },
-  { label: 'Insider activity', href: '/insiders', icon: UserRoundSearch },
   { label: 'Settings', href: '/settings', icon: Settings2 },
 ];
 
@@ -80,6 +68,7 @@ function assistantSectionForPath(pathname: string): AssistantSection {
   }
   if (
     pathname === '/' ||
+    pathname.startsWith('/portfolio') ||
     pathname.startsWith('/feed') ||
     pathname.startsWith('/holdings') ||
     pathname.startsWith('/invest') ||
@@ -104,10 +93,9 @@ export function AppShell({
   assistantContextLabel,
   assistantSection: assistantSectionOverride,
 }: Props) {
-  const { width } = useWindowDimensions();
+  const { desktop } = useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
-  const desktop = width >= breakpoints.mobileNav;
 
   const { user, isLoading, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);

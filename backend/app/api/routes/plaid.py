@@ -1,6 +1,4 @@
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
-from typing import Any
 from uuid import UUID
 
 import httpx
@@ -19,8 +17,9 @@ from app.api.schemas import (
 from app.config import Settings
 from app.db.models import FinancialAccount, FinancialConnection, FinancialCredential
 from app.providers.plaid.client import PlaidClient
+from app.providers.plaid.mapper import map_plaid_account_values
 from app.security.vault import TokenVault
-from app.services.plaid_sync import PlaidSyncError, sync_plaid_transactions
+from app.services.plaid_sync import PlaidSyncError, sync_plaid_money_connection
 
 router = APIRouter(prefix="/money/connections/plaid", tags=["money connections"])
 logger = structlog.get_logger()
@@ -175,7 +174,7 @@ async def exchange_plaid_public_token(
                 FinancialAccount.provider_account_id == provider_account_id,
             )
         )
-        values = _account_values(raw_account)
+        values = map_plaid_account_values(raw_account)
         if account is None:
             account = FinancialAccount(
                 connection_id=connection.id,
@@ -232,30 +231,7 @@ async def sync_plaid_connection(
         access_token = TokenVault(settings.app_secret.get_secret_value()).decrypt(
             credential.access_token_encrypted
         )
-        raw_accounts = await client.get_accounts(access_token)
-        for raw_account in raw_accounts:
-            provider_account_id = str(raw_account.get("account_id") or "")
-            if not provider_account_id:
-                continue
-            account = await session.scalar(
-                select(FinancialAccount).where(
-                    FinancialAccount.connection_id == connection.id,
-                    FinancialAccount.provider_account_id == provider_account_id,
-                )
-            )
-            if account is None:
-                account = FinancialAccount(
-                    connection_id=connection.id,
-                    provider_account_id=provider_account_id,
-                    **_account_values(raw_account),
-                )
-                session.add(account)
-            else:
-                for name, value in _account_values(raw_account).items():
-                    setattr(account, name, value)
-        await session.flush()
-
-        result = await sync_plaid_transactions(
+        result = await sync_plaid_money_connection(
             session,
             connection=connection,
             access_token=access_token,
@@ -340,39 +316,3 @@ def _plaid_client(settings: Settings) -> PlaidClient:
         secret=settings.plaid_secret,
         environment=settings.plaid_environment,
     )
-
-
-def _decimal(value: object) -> Decimal | None:
-    if value is None:
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-
-
-def _account_values(raw: dict[str, Any]) -> dict[str, object]:
-    plaid_type = str(raw.get("type") or "other")
-    subtype = str(raw.get("subtype") or "") or None
-    if plaid_type == "depository" and subtype in {"checking", "savings"}:
-        account_type = subtype
-    elif plaid_type == "credit":
-        account_type = "credit_card"
-    elif plaid_type == "loan":
-        account_type = "loan"
-    else:
-        account_type = "other"
-    balances = raw.get("balances") or {}
-    current = _decimal(balances.get("current")) or Decimal("0")
-    currency = balances.get("iso_currency_code") or balances.get("unofficial_currency_code")
-    return {
-        "display_name": str(raw.get("official_name") or raw.get("name") or "Account"),
-        "mask": str(raw["mask"]) if raw.get("mask") else None,
-        "account_type": account_type,
-        "subtype": subtype,
-        "currency": str(currency or "USD").upper(),
-        "current_balance": current,
-        "available_balance": _decimal(balances.get("available")),
-        "credit_limit": _decimal(balances.get("limit")),
-        "is_active": True,
-    }
