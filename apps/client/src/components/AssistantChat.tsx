@@ -7,7 +7,7 @@ import { ErrorState, LoadingState } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAssistantSection, type AssistantSection } from '@/lib/assistantSection';
 import type { AssistantMessageSummary } from '@/lib/types';
-import { colors } from '@/theme/tokens';
+import { colors, roles } from '@/theme/tokens';
 
 const SECTION_OPTIONS: { label: string; value: AssistantSection }[] = [
   { label: 'General', value: 'general' },
@@ -70,6 +70,7 @@ export function AssistantChat({ compact = false, initialSection, screenContext }
   const preferredSection = initialSection ?? trackedSection;
   const [section, setSection] = useState<AssistantSection>(preferredSection);
   const [draft, setDraft] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [pending, setPending] = useState<AssistantMessageSummary[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const queryClient = useQueryClient();
@@ -271,7 +272,9 @@ export function AssistantChat({ compact = false, initialSection, screenContext }
                 : 'Ask about budgeting, spending, or your portfolio…'
             }
             placeholderTextColor={colors.inkFaint}
-            style={styles.input}
+            style={[styles.input, inputFocused && styles.inputFocused]}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             onSubmitEditing={submit}
             returnKeyType="send"
           />
@@ -406,6 +409,12 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 13,
     outlineStyle: 'none',
+  } as never,
+  inputFocused: {
+    outlineWidth: 2,
+    outlineColor: roles.focusRing,
+    outlineStyle: 'solid',
+    outlineOffset: 2,
   } as never,
   sendButton: {
     width: 42,
