@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Redirect, useRouter } from 'expo-router';
 import { ArrowRight, Eye, EyeOff, RefreshCw } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
 import type { ChartPoint } from '@/lib/types';
+import { useConnectionSync } from '@/lib/useConnectionSync';
 import { cardShadow, colors, radius } from '@/theme/tokens';
 
 function timeOfDayGreeting(): string {
@@ -41,7 +42,6 @@ function PortfolioDashboard() {
   // squeezing both columns until they overlap.
   const sideBySideSidebar = width >= 1680;
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { user } = useAuth();
   const [privateMode, setPrivateMode] = useState(false);
   const [portfolioInspection, setPortfolioInspection] = useState<ChartPoint | null>(null);
@@ -50,18 +50,14 @@ function PortfolioDashboard() {
   const debrief = useQuery({ queryKey: ['morning-debrief'], queryFn: api.morningDebrief });
   const moneyOverview = useQuery({ queryKey: ['money-overview'], queryFn: api.moneyOverview });
   const firstName = user?.display_name.split(' ')[0]?.toUpperCase() ?? '';
-  const sync = useMutation({
-    mutationFn: async () => {
-      const connection = connections.data?.[0];
-      if (!connection) throw new Error('No brokerage connection found');
-      return api.sync(connection.id);
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['connections'] }),
-      ]);
-    },
+  const sync = useConnectionSync({
+    connections: connections.data?.map((connection) => ({
+      id: connection.id,
+      last_synced_at: connection.last_synced_at,
+      demo: connection.demo_mode,
+    })),
+    syncFn: api.sync,
+    invalidateKeys: [['dashboard'], ['connections'], ['holdings']],
   });
 
   const headerAction = (
@@ -95,7 +91,12 @@ function PortfolioDashboard() {
       assistantContextLabel="Portfolio overview · Live chart context"
       title="Portfolio overview"
       eyebrow={firstName ? `${timeOfDayGreeting()}, ${firstName}` : timeOfDayGreeting()}
-      headerAction={headerAction}>
+      headerAction={headerAction}
+      refreshing={sync.isPending || dashboard.isRefetching}
+      onRefresh={() => {
+        sync.mutate();
+        void dashboard.refetch();
+      }}>
       {dashboard.isLoading ? <LoadingState /> : null}
       {dashboard.isError ? (
         <ErrorState message={dashboard.error.message} retry={() => dashboard.refetch()} />

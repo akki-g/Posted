@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import {
   ArrowRight,
@@ -18,45 +18,35 @@ import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } fro
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, percent, relativeTime, signedMoney } from '@/lib/format';
+import { useConnectionSync } from '@/lib/useConnectionSync';
 import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function InvestScreen() {
   useEffect(() => setAssistantSection('investing'), []);
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [privateMode, setPrivateMode] = useState(false);
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
-  const liveConnections = connections.data?.filter((item) => !item.demo_mode) ?? [];
-  const connection = liveConnections[0] ?? connections.data?.[0];
 
-  const sync = useMutation({
-    mutationFn: async () => {
-      const targets =
-        liveConnections.length > 0 ? liveConnections : connection ? [connection] : [];
-      if (targets.length === 0) throw new Error('Connect a brokerage before synchronizing');
-      const results = await Promise.all(targets.map((item) => api.sync(item.id)));
-      return results[results.length - 1];
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['connections'] }),
-        queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-      ]);
-    },
+  const sync = useConnectionSync({
+    connections: connections.data?.map((connection) => ({
+      id: connection.id,
+      last_synced_at: connection.last_synced_at,
+      demo: connection.demo_mode,
+    })),
+    syncFn: api.sync,
+    invalidateKeys: [['dashboard'], ['connections'], ['holdings']],
   });
-
-  const refresh = async () => {
-    await Promise.all([dashboard.refetch(), connections.refetch()]);
-  };
 
   return (
     <AppShell
       title="Investing"
       eyebrow="PORTFOLIO"
-      refreshing={dashboard.isRefetching || connections.isRefetching}
-      onRefresh={() => void refresh()}
+      refreshing={sync.isPending || dashboard.isRefetching || connections.isRefetching}
+      onRefresh={() => {
+        sync.mutate();
+        void dashboard.refetch();
+      }}
       headerAction={
         <Pressable
           accessibilityLabel={privateMode ? 'Show balances' : 'Hide balances'}
@@ -148,7 +138,7 @@ export default function InvestScreen() {
           <View style={styles.actionRow}>
             <ActionButton
               label={sync.isPending ? 'Syncing…' : 'Sync all'}
-              disabled={sync.isPending || !connection}
+              disabled={sync.isPending || !connections.data?.length}
               onPress={() => sync.mutate()}
               icon={<RefreshCw size={14} color={colors.white} />}
             />
@@ -158,7 +148,6 @@ export default function InvestScreen() {
             </Pressable>
           </View>
           {sync.isError ? <Text style={styles.error}>{sync.error.message}</Text> : null}
-          {sync.isSuccess ? <Text style={styles.success}>{sync.data.message}</Text> : null}
 
           <View style={styles.panel}>
             <SectionHeader
@@ -290,7 +279,6 @@ const styles = StyleSheet.create({
   },
   settingsButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
   error: { color: colors.negative, fontSize: 11, lineHeight: 16, marginBottom: 12 },
-  success: { color: colors.positive, fontSize: 11, lineHeight: 16, marginBottom: 12 },
   panel: {
     borderWidth: 1,
     borderColor: colors.line,

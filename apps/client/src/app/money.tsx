@@ -24,6 +24,7 @@ import type {
   MoneyOverviewResponse,
   SpendingCategorySummary,
 } from '@/lib/types';
+import { useConnectionSync } from '@/lib/useConnectionSync';
 import { cardShadow, colors, radius } from '@/theme/tokens';
 
 export default function MoneyScreen() {
@@ -34,6 +35,24 @@ export default function MoneyScreen() {
   const router = useRouter();
   const [privateMode, setPrivateMode] = useState(false);
   const query = useQuery({ queryKey: ['money-overview'], queryFn: api.moneyOverview });
+  const moneyConnections = useQuery({
+    queryKey: ['money-connections'],
+    queryFn: api.moneyConnections,
+  });
+  const sync = useConnectionSync({
+    connections: moneyConnections.data?.map((connection) => ({
+      id: connection.id,
+      last_synced_at: connection.last_synced_at,
+      demo: connection.is_demo,
+    })),
+    syncFn: api.syncMoneyConnection,
+    invalidateKeys: [
+      ['money-overview'],
+      ['money-connections'],
+      ['money-transactions'],
+      ['subscriptions'],
+    ],
+  });
   const concealed = (value: string) => (privateMode ? '$••••' : money(value));
 
   const headerAction = (
@@ -63,8 +82,11 @@ export default function MoneyScreen() {
       title={mobile ? 'Your money' : 'Money overview'}
       eyebrow={mobile ? 'TODAY' : 'CASH FLOW AND EVERYDAY FINANCES'}
       headerAction={headerAction}
-      refreshing={query.isRefetching}
-      onRefresh={() => query.refetch()}>
+      refreshing={sync.isPending || query.isRefetching}
+      onRefresh={() => {
+        sync.mutate();
+        void query.refetch();
+      }}>
       {query.isLoading ? <LoadingState label="Loading financial accounts" /> : null}
       {query.isError ? <ErrorState message={query.error.message} retry={() => query.refetch()} /> : null}
       {query.data && mobile ? (
