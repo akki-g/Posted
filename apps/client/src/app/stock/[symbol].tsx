@@ -22,7 +22,7 @@ import {
 import { AppShell } from '@/components/AppShell';
 import { MarketSearch } from '@/components/MarketSearch';
 import { StockPriceChart } from '@/components/StockPriceChart';
-import { DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
+import { DemoBanner, ErrorState, IconButton, LoadingState, Panel, SectionHeader } from '@/components/ui';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money, number, percent, relativeTime, signedMoney } from '@/lib/format';
 import { marketApi } from '@/lib/marketApi';
@@ -31,9 +31,8 @@ import type {
   InsiderTransaction,
   MarketPeriod,
   MarketProviderStatus,
-  MarketQuote,
 } from '@/lib/marketTypes';
-import { cardShadow, colors, radius } from '@/theme/tokens';
+import { colors, roles } from '@/theme/tokens';
 
 const PERIODS: MarketPeriod[] = ['1D', '5D', '1M', '6M', '1Y', '5Y'];
 
@@ -89,15 +88,14 @@ export default function StockDetailScreen() {
       headerAction={
         <View style={styles.headerActions}>
           {showHeaderSearch ? <MarketSearch compact initialValue="" /> : null}
-          <Pressable
+          <IconButton
             accessibilityLabel="Refresh market data"
+            icon={<RefreshCw size={16} color={colors.inkMuted} />}
             onPress={() => void refresh()}
-            style={styles.headerIcon}>
-            <RefreshCw size={16} color={colors.inkMuted} />
-          </Pressable>
+          />
         </View>
       }>
-      <Pressable onPress={() => router.push('/holdings')} style={styles.backLink}>
+      <Pressable onPress={() => router.push('/portfolio?tab=holdings')} style={styles.backLink}>
         <ArrowLeft size={14} color={colors.tealDark} />
         <Text style={styles.backText}>All holdings</Text>
       </Pressable>
@@ -113,7 +111,7 @@ export default function StockDetailScreen() {
             <DemoBanner message="Sample market data. Add Alpaca and Finnhub keys to enable current provider data." />
           ) : null}
 
-          <View style={styles.quoteHero}>
+          <Panel variant="inverted" style={styles.quoteHero}>
             <View style={styles.identityRow}>
               <View style={styles.assetBadge}>
                 <Text style={styles.assetBadgeText}>{detail.data.symbol.slice(0, 2)}</Text>
@@ -144,7 +142,7 @@ export default function StockDetailScreen() {
                 <Text
                   style={[
                     styles.priceChange,
-                    detail.data.quote.change >= 0 ? styles.positive : styles.negative,
+                    detail.data.quote.change >= 0 ? styles.priceChangePositive : styles.priceChangeNegative,
                   ]}>
                   {signedMoney(detail.data.quote.change)} ({percent(detail.data.quote.change_percent)})
                 </Text>
@@ -181,11 +179,11 @@ export default function StockDetailScreen() {
                 }
               />
             </View>
-          </View>
+          </Panel>
 
           {!showHeaderSearch ? <MarketSearch compact initialValue="" /> : null}
 
-          <View style={[styles.panel, styles.chartPanelSection]}>
+          <Panel style={styles.chartPanelSection}>
             <SectionHeader
               title="Price history"
               caption={
@@ -236,11 +234,11 @@ export default function StockDetailScreen() {
                 </View>
               </View>
             ) : null}
-          </View>
+          </Panel>
 
           <View style={[styles.contentGrid, !desktop && styles.contentGridStacked]}>
             <View style={styles.mainColumn}>
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader
                   title="Earnings"
                   caption="Reported results and the next scheduled estimate"
@@ -260,9 +258,9 @@ export default function StockDetailScreen() {
                 ) : (
                   <EmptyPanel text="No earnings records are available from the configured providers." />
                 )}
-              </View>
+              </Panel>
 
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader
                   title="Related news & filings"
                   caption="Ticker-linked events from Posted’s normalized event store"
@@ -292,16 +290,16 @@ export default function StockDetailScreen() {
                 ) : (
                   <EmptyPanel text="No normalized portfolio events are linked to this ticker yet." />
                 )}
-              </View>
+              </Panel>
 
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader
                   title="Insider activity"
                   caption="Transactions, monthly MSPR sentiment, and portfolio-aware interpretation"
                   action={
                     <Pressable
                       onPress={() =>
-                        router.push({ pathname: '/insiders', params: { symbol } })
+                        router.push({ pathname: '/portfolio', params: { tab: 'insiders', symbol } })
                       }
                       style={styles.insiderAnalysisLink}>
                       <BrainCircuit size={13} color={colors.tealDark} />
@@ -357,12 +355,12 @@ export default function StockDetailScreen() {
                     )}
                   </>
                 ) : null}
-              </View>
+              </Panel>
             </View>
 
             <View style={styles.sideColumn}>
               {detail.data.position ? (
-                <View style={[styles.panel, styles.positionPanel]}>
+                <Panel style={styles.positionPanel}>
                   <View style={styles.cardTitleRow}>
                     <View style={styles.cardIcon}>
                       <BriefcaseBusiness size={16} color={colors.tealDark} />
@@ -405,10 +403,10 @@ export default function StockDetailScreen() {
                       value={String(detail.data.position.account_count)}
                     />
                   </View>
-                </View>
+                </Panel>
               ) : null}
 
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader title="Key statistics" />
                 <View style={styles.statsGrid}>
                   <SideMetric
@@ -433,9 +431,9 @@ export default function StockDetailScreen() {
                     value={priceOrDash(detail.data.company.fifty_two_week_low)}
                   />
                 </View>
-              </View>
+              </Panel>
 
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader title="Company" />
                 <View style={styles.companyBody}>
                   <View style={styles.companyTags}>
@@ -460,9 +458,9 @@ export default function StockDetailScreen() {
                     </Pressable>
                   ) : null}
                 </View>
-              </View>
+              </Panel>
 
-              <View style={styles.panel}>
+              <Panel>
                 <SectionHeader
                   title="Data coverage"
                   caption="What each free source contributes"
@@ -470,7 +468,7 @@ export default function StockDetailScreen() {
                 {detail.data.providers.map((provider) => (
                   <ProviderRow key={provider.name} provider={provider} />
                 ))}
-              </View>
+              </Panel>
             </View>
           </View>
           <Text style={styles.disclaimer}>{detail.data.disclaimer}</Text>
@@ -662,15 +660,6 @@ function formatDate(value: string) {
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9, zIndex: 30 },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   backLink: {
     alignSelf: 'flex-start',
     marginTop: -13,
@@ -680,12 +669,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   backText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
-  quoteHero: {
-    borderRadius: 14,
-    backgroundColor: colors.navy,
-    padding: 22,
-    marginBottom: 16,
-  },
+  quoteHero: { padding: 22, marginBottom: 16 },
   identityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   assetBadge: {
     width: 42,
@@ -698,19 +682,19 @@ const styles = StyleSheet.create({
   assetBadgeText: { color: colors.white, fontSize: 13, fontWeight: '800' },
   identityCopy: { flex: 1, minWidth: 0 },
   companyName: { color: colors.white, fontSize: 17, fontWeight: '700' },
-  listing: { color: '#8F9CAE', fontSize: 9, letterSpacing: 0.7, marginTop: 5 },
+  listing: { color: colors.inkOnDarkMuted, fontSize: 9, letterSpacing: 0.7, marginTop: 5 },
   freshnessBadge: {
     borderWidth: 1,
-    borderColor: '#344258',
+    borderColor: colors.hairlineOnDark,
     paddingHorizontal: 9,
     height: 27,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  freshnessDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#32C98C' },
-  freshnessDotDemo: { backgroundColor: '#75D4D1' },
-  freshnessText: { color: '#B8C3D0', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
+  freshnessDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.liveDotOnDark },
+  freshnessDotDemo: { backgroundColor: roles.demo },
+  freshnessText: { color: colors.inkOnDarkMuted, fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
   priceRow: {
     marginTop: 22,
     flexDirection: 'row',
@@ -727,12 +711,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   priceChange: { fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  priceMeta: { color: '#8F9CAE', fontSize: 9, marginTop: 5 },
-  positive: { color: '#46D39B' },
-  negative: { color: '#FF7E8B' },
+  priceChangePositive: { color: colors.positiveOnDark },
+  priceChangeNegative: { color: colors.negativeOnDark },
+  priceMeta: { color: colors.inkOnDarkMuted, fontSize: 9, marginTop: 5 },
+  positive: { color: colors.positive },
+  negative: { color: colors.negative },
   quoteMetrics: {
     borderTopWidth: 1,
-    borderTopColor: '#2D394C',
+    borderTopColor: colors.hairlineOnDark,
     marginTop: 21,
     paddingTop: 14,
     flexDirection: 'row',
@@ -740,13 +726,13 @@ const styles = StyleSheet.create({
   },
   quoteMetric: { minWidth: 125, flex: 1, marginBottom: 8 },
   quoteMetricLabel: {
-    color: '#758297',
+    color: colors.inkOnDarkFaint,
     fontSize: 8,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
   quoteMetricValue: {
-    color: '#DCE2E9',
+    color: colors.inkOnDarkMuted,
     fontSize: 11,
     fontWeight: '600',
     marginTop: 5,
@@ -756,15 +742,6 @@ const styles = StyleSheet.create({
   contentGridStacked: { flexDirection: 'column' },
   mainColumn: { flex: 2, minWidth: 0, gap: 16 },
   sideColumn: { flex: 1, minWidth: 310, gap: 16 },
-  panel: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    ...cardShadow,
-  },
   chartBody: { padding: 14 },
   chartPanelSection: { marginBottom: 16 },
   periodRow: { flexDirection: 'row', gap: 2 },
@@ -781,7 +758,7 @@ const styles = StyleSheet.create({
   coverageNote: {
     minHeight: 34,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     paddingTop: 10,
     marginTop: 8,
     flexDirection: 'row',
@@ -810,7 +787,7 @@ const styles = StyleSheet.create({
   positionGain: { fontSize: 11, fontWeight: '700', marginTop: 6 },
   cardMetrics: {
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     marginTop: 16,
     paddingTop: 6,
   },
@@ -857,7 +834,7 @@ const styles = StyleSheet.create({
     minHeight: 66,
     paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -870,7 +847,7 @@ const styles = StyleSheet.create({
     minHeight: 96,
     paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -891,7 +868,7 @@ const styles = StyleSheet.create({
   insiderAnalysisLink: {
     minHeight: 32,
     borderWidth: 1,
-    borderColor: '#A6D9D9',
+    borderColor: roles.accentSoftBorder,
     backgroundColor: colors.tealSoft,
     paddingHorizontal: 10,
     flexDirection: 'row',
@@ -903,7 +880,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: roles.borderHairline,
   },
   insiderMetric: {
     flex: 1,
@@ -911,7 +888,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRightWidth: 1,
-    borderRightColor: colors.line,
+    borderRightColor: roles.borderHairline,
   },
   insiderMetricLabel: {
     color: colors.inkFaint,
@@ -929,14 +906,14 @@ const styles = StyleSheet.create({
   insiderRead: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: roles.borderHairline,
   },
   insiderReadTitle: { color: colors.ink, fontSize: 12, fontWeight: '800' },
   insiderReadText: { color: colors.inkMuted, fontSize: 10, lineHeight: 16, marginTop: 6 },
   insiderAi: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#A6D9D9',
+    borderBottomColor: roles.accentSoftBorder,
     backgroundColor: colors.tealSoft,
   },
   insiderAiTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
@@ -947,7 +924,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -969,7 +946,7 @@ const styles = StyleSheet.create({
   providerRow: {
     padding: 14,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
     flexDirection: 'row',
     gap: 10,
   },
@@ -977,7 +954,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: colors.lineStrong,
+    backgroundColor: roles.borderHairlineStrong,
     marginTop: 4,
   },
   providerDotActive: { backgroundColor: colors.positive },

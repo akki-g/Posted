@@ -9,6 +9,8 @@ from app.db.base import Base
 from app.db.models import AssistantMessage, User
 from app.db.session import create_engine, create_session_factory
 from app.services.assistant import (
+    _BROKERAGE_BACKED_TOOLS,
+    _MONEY_BACKED_TOOLS,
     RELIABLE_DOMAINS,
     SYSTEM_PROMPT,
     TOOLS,
@@ -156,10 +158,13 @@ async def test_insider_activity_tool_returns_grounded_context() -> None:
         disclaimer="Reported filings can lag transactions.",
     )
 
-    with patch(
-        "app.services.assistant.get_insider_analysis",
-        new=AsyncMock(return_value=analysis),
-    ) as lookup:
+    with (
+        patch(
+            "app.services.assistant.get_insider_analysis",
+            new=AsyncMock(return_value=analysis),
+        ) as lookup,
+        patch("app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()),
+    ):
         result = await _execute_tool(
             "get_insider_activity",
             {"symbol": "aapl"},
@@ -173,6 +178,166 @@ async def test_insider_activity_tool_returns_grounded_context() -> None:
     assert result["summary"]["signal"] == "Moderate insider distribution"
     assert result["monthly_sentiment"][0]["mspr"] == -20
     assert result["recent_transactions"][0]["transaction_code"] == "S"
+
+
+async def _user_session():
+    settings = Settings(database_url="sqlite+aiosqlite:///:memory:")
+    engine = create_engine(settings)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_factory = create_session_factory(engine)
+    user_id = uuid4()
+    async with session_factory() as session:
+        session.add(User(id=user_id, email=f"{user_id}@test.local", display_name="Sync Gate"))
+        await session.commit()
+    return engine, session_factory, settings, user_id
+
+
+async def test_execute_tool_syncs_only_money_connections_for_money_backed_reads() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    async with session_factory() as session:
+        for tool_name in _MONEY_BACKED_TOOLS:
+            with (
+                patch(
+                    "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+                ) as money_sync,
+                patch(
+                    "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+                ) as brokerage_sync,
+            ):
+                await _execute_tool(
+                    tool_name, {}, session=session, user_id=user_id, settings=settings
+                )
+            money_sync.assert_awaited_once_with(session, user_id=user_id, settings=settings)
+            brokerage_sync.assert_not_awaited()
+
+    await engine.dispose()
+
+
+async def test_execute_tool_syncs_only_brokerage_connections_for_portfolio_reads() -> None:
+    # get_insider_activity is also brokerage-backed but needs a symbol input and a
+    # get_insider_analysis mock with a realistic shape -- covered by its own dedicated
+    # test below instead of this generic empty-input loop.
+    engine, session_factory, settings, user_id = await _user_session()
+
+    async with session_factory() as session:
+        for tool_name in _BROKERAGE_BACKED_TOOLS - {"get_insider_activity"}:
+            with (
+                patch(
+                    "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+                ) as brokerage_sync,
+                patch(
+                    "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+                ) as money_sync,
+            ):
+                await _execute_tool(
+                    tool_name, {}, session=session, user_id=user_id, settings=settings
+                )
+            brokerage_sync.assert_awaited_once_with(session, user_id=user_id, settings=settings)
+            money_sync.assert_not_awaited()
+
+    await engine.dispose()
+
+
+async def test_execute_tool_does_not_sync_for_impact_feed() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+        ):
+            await _execute_tool(
+                "get_impact_feed", {}, session=session, user_id=user_id, settings=settings
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+
+    await engine.dispose()
+
+
+async def test_execute_tool_does_not_sync_for_company_news_search() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch("app.services.assistant.MultiSourceNewsAdapter") as adapter_cls,
+        ):
+            adapter_cls.return_value.fetch_company_news = AsyncMock(
+                return_value=SimpleNamespace(providers=(), warnings=(), envelopes=())
+            )
+            await _execute_tool(
+                "search_company_news",
+                {"symbol": "AAPL"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+
+    await engine.dispose()
+
+
+async def test_execute_tool_syncs_brokerage_connections_before_insider_activity() -> None:
+    # get_insider_activity reads live position/holdings context via get_insider_analysis's
+    # call to get_holdings, so it needs the same brokerage-freshness guarantee as
+    # get_portfolio_holdings -- it's brokerage-backed even though its headline data
+    # (Finnhub sentiment/news) is independently fresh.
+    engine, session_factory, settings, user_id = await _user_session()
+
+    def serializable(**values):
+        return SimpleNamespace(model_dump=lambda mode=None: values)
+
+    analysis = SimpleNamespace(
+        symbol="AAPL",
+        name="Apple Inc.",
+        quote=serializable(price=200, change_percent=2.5),
+        one_month_price_change_percent=6.4,
+        position=None,
+        summary=serializable(signal="Moderate insider distribution"),
+        interpretation=serializable(summary="Reported sales outweigh purchases."),
+        sentiment=[],
+        transactions=[],
+        recent_news=[],
+        disclaimer="Reported filings can lag transactions.",
+    )
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.get_insider_analysis",
+                new=AsyncMock(return_value=analysis),
+            ),
+        ):
+            await _execute_tool(
+                "get_insider_activity",
+                {"symbol": "AAPL"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_awaited_once_with(session, user_id=user_id, settings=settings)
+        money_sync.assert_not_awaited()
+
+    await engine.dispose()
 
 
 async def test_run_assistant_turn_resumes_after_pause_turn_and_returns_sources() -> None:

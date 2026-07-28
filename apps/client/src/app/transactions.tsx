@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { Search, SlidersHorizontal } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { TransactionList } from '@/components/MoneyLists';
-import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
+import { ErrorState, FilterChip, LoadingState, Panel, SectionHeader, StatTile } from '@/components/ui';
 import { api } from '@/lib/api';
 import { setAssistantSection } from '@/lib/assistantSection';
 import { money } from '@/lib/format';
-import { cardShadow, colors, radius } from '@/theme/tokens';
+import { useBreakpoint } from '@/theme/useBreakpoint';
+import { colors, roles, spacing } from '@/theme/tokens';
 
 const FILTERS = [
   { label: 'All', value: 'all' },
@@ -21,9 +22,9 @@ const FILTERS = [
 
 export default function TransactionsScreen() {
   useEffect(() => setAssistantSection('money'), []);
-  const { width } = useWindowDimensions();
-  const compact = width < 680;
+  const { compact } = useBreakpoint();
   const [search, setSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['value']>('all');
   const query = useQuery({
     queryKey: ['money-transactions'],
@@ -58,103 +59,76 @@ export default function TransactionsScreen() {
     )
     .reduce((total, transaction) => total + Number(transaction.amount), 0);
 
+  const searchBox = (
+    <View style={[styles.searchBox, searchFocused && styles.searchBoxFocused, compact && styles.searchBoxCompact]}>
+      <Search size={15} color={colors.inkFaint} />
+      <TextInput
+        value={search}
+        onChangeText={setSearch}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
+        placeholder={compact ? 'Search merchant or category' : 'Merchant or category'}
+        placeholderTextColor={colors.inkFaint}
+        style={styles.searchInput}
+      />
+    </View>
+  );
+
   return (
     <AppShell title="Transactions" eyebrow="SEARCHABLE ACTIVITY ACROSS ACCOUNTS">
       <View style={styles.summaryRow}>
-        <View style={[styles.summaryTile, compact && styles.summaryTileCompact]}>
-          <Text style={styles.summaryLabel}>VISIBLE ACTIVITY</Text>
-          <Text style={styles.summaryValue}>{transactions.length}</Text>
-          <Text style={styles.summaryCaption}>of {query.data?.total ?? '—'} transactions</Text>
-        </View>
-        <View style={[styles.summaryTile, compact && styles.summaryTileCompact]}>
-          <Text style={styles.summaryLabel}>VISIBLE OUTFLOWS</Text>
-          <Text style={styles.summaryValue}>{money(totalOutflow)}</Text>
-          <Text style={styles.summaryCaption}>Transfers excluded</Text>
-        </View>
-        {!compact ? (
-          <View style={styles.summaryTile}>
-            <Text style={styles.summaryLabel}>DATA SOURCES</Text>
-            <Text style={styles.summaryValue}>Plaid</Text>
-            <Text style={styles.summaryCaption}>FinanceKit adapter planned</Text>
-          </View>
-        ) : null}
+        <StatTile label="VISIBLE ACTIVITY" value={String(transactions.length)} caption={`of ${query.data?.total ?? '—'} transactions`} />
+        <StatTile label="VISIBLE OUTFLOWS" value={money(totalOutflow)} caption="Transfers excluded" />
+        {!compact ? <StatTile label="DATA SOURCES" value="Plaid" caption="FinanceKit adapter planned" /> : null}
       </View>
 
-      <View style={styles.panel}>
+      <Panel>
         <SectionHeader
           title="All activity"
           caption="Pending items may change when they post"
-          action={!compact ? (
-            <View style={[styles.searchBox, compact && styles.searchBoxCompact]}>
-              <Search size={15} color={colors.inkFaint} />
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Merchant or category"
-                placeholderTextColor={colors.inkFaint}
-                style={styles.searchInput}
-              />
-            </View>
-          ) : undefined}
+          action={!compact ? searchBox : undefined}
         />
-        {compact ? (
-          <View style={styles.mobileSearchWrap}>
-            <View style={[styles.searchBox, styles.mobileSearchBox]}>
-              <Search size={15} color={colors.inkFaint} />
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search merchant or category"
-                placeholderTextColor={colors.inkFaint}
-                style={styles.searchInput}
-              />
-            </View>
-          </View>
-        ) : null}
+        {compact ? <View style={styles.mobileSearchWrap}>{searchBox}</View> : null}
         <View style={styles.filters}>
           <SlidersHorizontal size={14} color={colors.inkMuted} />
           {FILTERS.map((item) => (
-            <Pressable
-              key={item.value}
-              onPress={() => setFilter(item.value)}
-              style={[styles.filter, filter === item.value && styles.filterActive]}>
-              <Text style={[styles.filterText, filter === item.value && styles.filterTextActive]}>
-                {item.label}
-              </Text>
-            </Pressable>
+            <FilterChip key={item.value} label={item.label} active={filter === item.value} onPress={() => setFilter(item.value)} />
           ))}
         </View>
         {query.isLoading ? <LoadingState label="Loading transactions" /> : null}
         {query.isError ? <ErrorState message={query.error.message} retry={() => query.refetch()} /> : null}
         {query.data ? <TransactionList transactions={transactions} /> : null}
-      </View>
+      </Panel>
     </AppShell>
   );
 }
 
 const styles = StyleSheet.create({
-  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 1, backgroundColor: colors.line, marginBottom: 16 },
-  summaryTile: { flex: 1, minWidth: 210, height: 112, padding: 17, backgroundColor: colors.surface },
-  summaryTileCompact: { minWidth: 0, height: 104, padding: 14 },
-  summaryLabel: { color: colors.inkFaint, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  summaryValue: { color: colors.ink, fontSize: 22, fontWeight: '700', marginTop: 14, fontVariant: ['tabular-nums'] },
-  summaryCaption: { color: colors.inkMuted, fontSize: 10, marginTop: 5 },
-  panel: {
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
+  searchBox: {
+    width: 230,
+    height: 34,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    ...cardShadow,
+    borderColor: roles.borderHairline,
+    backgroundColor: colors.canvas,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
-  searchBox: { width: 230, height: 34, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.canvas, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  searchBoxFocused: { outlineWidth: 2, outlineColor: roles.focusRing, outlineStyle: 'solid', outlineOffset: 2 } as never,
   searchBoxCompact: { width: 150 },
-  mobileSearchWrap: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
-  mobileSearchBox: { width: '100%', height: 42, backgroundColor: colors.canvas },
+  mobileSearchWrap: { padding: spacing.sm, borderBottomWidth: 1, borderBottomColor: roles.borderHairline },
   searchInput: { flex: 1, color: colors.ink, fontSize: 11, outlineStyle: 'none' } as never,
-  filters: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, borderBottomWidth: 1, borderBottomColor: colors.line },
-  filter: { height: 29, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  filterActive: { backgroundColor: colors.tealSoft, borderColor: '#A6D9D9' },
-  filterText: { color: colors.inkMuted, fontSize: 9, fontWeight: '700' },
-  filterTextActive: { color: colors.tealDark },
+  filters: {
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: roles.borderHairline,
+  },
 });

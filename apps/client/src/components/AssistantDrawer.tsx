@@ -1,5 +1,7 @@
-import { Sparkles, X } from 'lucide-react-native';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Maximize2, Sparkles, X } from 'lucide-react-native';
+import { useEffect, useRef } from 'react';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AssistantChat } from '@/components/AssistantChat';
 import type { AssistantSection } from '@/lib/assistantSection';
@@ -12,6 +14,9 @@ type Props = {
   screenContext: string | (() => string);
 };
 
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 export function AssistantDrawer({
   contextLabel,
   initialSection,
@@ -23,10 +28,59 @@ export function AssistantDrawer({
   // Any width that shows AppShell's bottom tab bar must use the compact
   // variant, which floats above the bar instead of covering it.
   const compact = width < breakpoints.mobileNav;
+  const router = useRouter();
+
+  const panelRef = useRef<View>(null);
+  const closeButtonRef = useRef<View>(null);
+
+  // Web-only focus management: move focus in on open, trap Tab inside the
+  // panel, close on Escape, and return focus to whatever opened the drawer.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const closeNode = closeButtonRef.current as unknown as HTMLElement | null;
+    closeNode?.focus?.();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const container = panelRef.current as unknown as HTMLElement | null;
+      if (!container) return;
+      const focusable = container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+    // Run once on mount/unmount only — re-running on every prop change would
+    // re-steal focus away from wherever the user has since tabbed to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const expand = () => {
+    onClose();
+    router.push({ pathname: '/assistant', params: { section: initialSection } });
+  };
 
   return (
     <View
+      ref={panelRef}
       accessibilityLabel="Ask Posted contextual assistant"
+      accessibilityViewIsModal
       style={[
         styles.panel,
         docked
@@ -51,7 +105,17 @@ export function AssistantDrawer({
             {contextLabel}
           </Text>
         </View>
+        {!docked ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Expand to full assistant"
+            onPress={expand}
+            style={({ pressed }) => [styles.closeButton, pressed && styles.closeButtonPressed]}>
+            <Maximize2 size={15} color={colors.inkMuted} />
+          </Pressable>
+        ) : null}
         <Pressable
+          ref={closeButtonRef}
           accessibilityRole="button"
           accessibilityLabel="Close Ask Posted"
           onPress={onClose}

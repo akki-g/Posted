@@ -1,16 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Check,
   ChevronRight,
   Database,
-  Landmark,
   LockKeyhole,
   MessageSquare,
-  RefreshCw,
   Smartphone,
   SunMedium,
-  Unlink,
   WalletCards,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
@@ -29,12 +25,12 @@ import {
 import { AppShell } from '@/components/AppShell';
 import { PlaidInvestmentLinkButton } from '@/components/PlaidInvestmentLinkButton';
 import { PlaidLinkButton } from '@/components/PlaidLinkButton';
-import { ErrorState, LoadingState, SectionHeader } from '@/components/ui';
+import { ConnectionRow, ErrorState, LoadingState, Panel, SectionHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { relativeTime } from '@/lib/format';
 import type { UserPreferences } from '@/lib/types';
-import { cardShadow, colors, radius } from '@/theme/tokens';
+import { colors, roles } from '@/theme/tokens';
 
 export default function SettingsScreen() {
   const queryClient = useQueryClient();
@@ -181,7 +177,7 @@ export default function SettingsScreen() {
   return (
     <AppShell title="Settings" eyebrow="CONNECTIONS AND ALERTS">
       <View style={styles.settingsGrid}>
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Account" caption="Signed-in identity for this device" />
           <View style={styles.settingRow}>
             <View style={styles.settingCopy}>
@@ -201,9 +197,9 @@ export default function SettingsScreen() {
               </Pressable>
             ) : null}
           </View>
-        </View>
+        </Panel>
 
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Banking connections" caption="Your balances and transaction history" />
           {moneyConnections.isLoading ? <LoadingState label="Loading bank connections" /> : null}
           {moneyConnections.isError ? (
@@ -213,48 +209,16 @@ export default function SettingsScreen() {
             />
           ) : null}
           {moneyConnections.data?.map((connection) => (
-            <View key={connection.id} style={styles.connectionRow}>
-              <View style={styles.providerMark}>
-                <Landmark size={17} color={colors.tealDark} />
-              </View>
-              <View style={styles.connectionCopy}>
-                <Text style={styles.connectionName}>{connection.display_name}</Text>
-                <Text style={styles.connectionMeta}>
-                  {connection.account_count} accounts · synced {connection.last_synced_at ? relativeTime(connection.last_synced_at) : 'never'}
-                </Text>
-              </View>
-              {connection.is_demo ? (
-                <View style={styles.demoStatus}>
-                  <Check size={12} color={colors.tealDark} />
-                  <Text style={styles.demoStatusText}>DEMO</Text>
-                </View>
-              ) : (
-                <View style={styles.connectionActions}>
-                  <Pressable
-                    accessibilityLabel={`Sync ${connection.display_name}`}
-                    disabled={syncMoney.isPending}
-                    onPress={() => syncMoney.mutate(connection.id)}
-                    style={styles.syncButton}>
-                    <RefreshCw size={12} color={colors.tealDark} />
-                    <Text style={styles.syncButtonText}>
-                      {syncMoney.isPending && syncMoney.variables === connection.id ? 'SYNCING' : 'SYNC'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityLabel={`Unlink ${connection.display_name}`}
-                    disabled={unlinkMoney.isPending}
-                    onPress={() => confirmUnlinkMoney(connection.id, connection.display_name)}
-                    style={({ pressed }) => [styles.unlinkButton, pressed && styles.unlinkButtonPressed]}>
-                    <Unlink size={12} color={colors.negative} />
-                    <Text style={styles.unlinkButtonText}>
-                      {unlinkMoney.isPending && unlinkMoney.variables === connection.id
-                        ? 'REMOVING'
-                        : 'UNLINK'}
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
+            <ConnectionRow
+              key={connection.id}
+              name={connection.display_name}
+              meta={`${connection.account_count} accounts · synced ${connection.last_synced_at ? relativeTime(connection.last_synced_at) : 'never'}`}
+              status={connection.is_demo ? 'demo' : 'live'}
+              syncing={syncMoney.isPending && syncMoney.variables === connection.id}
+              unlinking={unlinkMoney.isPending && unlinkMoney.variables === connection.id}
+              onSync={connection.is_demo ? undefined : () => syncMoney.mutate(connection.id)}
+              onUnlink={connection.is_demo ? undefined : () => confirmUnlinkMoney(connection.id, connection.display_name)}
+            />
           ))}
           {unlinkMoney.isError ? (
             <Text style={styles.connectionError}>{unlinkMoney.error.message}</Text>
@@ -281,61 +245,25 @@ export default function SettingsScreen() {
           {syncMoney.isError ? (
             <Text style={styles.connectionError}>{syncMoney.error.message}</Text>
           ) : null}
-        </View>
+        </Panel>
 
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Investing connections" caption="Read-only brokerage access" />
           {connections.isLoading ? <LoadingState label="Loading brokerage connections" /> : null}
           {connections.isError ? (
             <ErrorState message={connections.error.message} retry={() => connections.refetch()} />
           ) : null}
           {connections.data?.map((connection) => (
-            <View key={connection.id} style={styles.connectionRow}>
-              <View style={styles.providerMark}>
-                <Text style={styles.providerMarkText}>
-                  {connection.provider === 'plaid_investments' ? 'P' : 'S'}
-                </Text>
-              </View>
-              <View style={styles.connectionCopy}>
-                <Text style={styles.connectionName}>{connection.display_name}</Text>
-                <Text style={styles.connectionMeta}>
-                  {connection.account_count} accounts · synced {connection.last_synced_at ? relativeTime(connection.last_synced_at) : 'never'}
-                </Text>
-              </View>
-              {connection.demo_mode ? (
-                <View style={styles.demoStatus}>
-                  <Check size={12} color={colors.tealDark} />
-                  <Text style={styles.demoStatusText}>DEMO</Text>
-                </View>
-              ) : (
-                <View style={styles.connectionActions}>
-                  <Pressable
-                    accessibilityLabel={`Sync ${connection.display_name}`}
-                    disabled={syncInvesting.isPending}
-                    onPress={() => syncInvesting.mutate(connection.id)}
-                    style={styles.syncButton}>
-                    <RefreshCw size={12} color={colors.tealDark} />
-                    <Text style={styles.syncButtonText}>
-                      {syncInvesting.isPending && syncInvesting.variables === connection.id
-                        ? 'SYNCING'
-                        : 'SYNC'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityLabel={`Unlink ${connection.display_name}`}
-                    disabled={unlinkInvesting.isPending}
-                    onPress={() => confirmUnlinkInvesting(connection.id, connection.display_name)}
-                    style={({ pressed }) => [styles.unlinkButton, pressed && styles.unlinkButtonPressed]}>
-                    <Unlink size={12} color={colors.negative} />
-                    <Text style={styles.unlinkButtonText}>
-                      {unlinkInvesting.isPending && unlinkInvesting.variables === connection.id
-                        ? 'REMOVING'
-                        : 'UNLINK'}
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
+            <ConnectionRow
+              key={connection.id}
+              name={connection.display_name}
+              meta={`${connection.account_count} accounts · synced ${connection.last_synced_at ? relativeTime(connection.last_synced_at) : 'never'}`}
+              status={connection.demo_mode ? 'demo' : 'live'}
+              syncing={syncInvesting.isPending && syncInvesting.variables === connection.id}
+              unlinking={unlinkInvesting.isPending && unlinkInvesting.variables === connection.id}
+              onSync={connection.demo_mode ? undefined : () => syncInvesting.mutate(connection.id)}
+              onUnlink={connection.demo_mode ? undefined : () => confirmUnlinkInvesting(connection.id, connection.display_name)}
+            />
           ))}
           {unlinkInvesting.isError ? (
             <Text style={styles.connectionError}>{unlinkInvesting.error.message}</Text>
@@ -399,9 +327,9 @@ export default function SettingsScreen() {
             <Text style={styles.connectionError}>{syncInvesting.error.message}</Text>
           ) : null}
           <PlaidInvestmentLinkButton disabled={!plaidInvestmentsStatus.data?.configured} />
-        </View>
+        </Panel>
 
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Text Messaging" caption="Ask Posted questions over SMS" />
           <View style={styles.settingRow}>
             <View style={styles.settingIcon}>
@@ -517,9 +445,9 @@ export default function SettingsScreen() {
           {verifySmsLink.isError ? (
             <Text style={styles.connectionError}>{verifySmsLink.error.message}</Text>
           ) : null}
-        </View>
+        </Panel>
 
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Alert delivery" caption="Control how Posted reaches you" />
           <SettingRow
             icon={<Smartphone size={17} color={colors.inkMuted} />}
@@ -527,6 +455,7 @@ export default function SettingsScreen() {
             caption="Upcoming bills and unusual money activity"
             control={
               <Switch
+                accessibilityLabel="Push notifications"
                 value={preferences.data?.push_enabled ?? true}
                 disabled={!preferences.data || updatePreferences.isPending}
                 onValueChange={(value) => updatePreference({ push_enabled: value })}
@@ -540,6 +469,7 @@ export default function SettingsScreen() {
             caption="Daily money summary at 8:00 AM"
             control={
               <Switch
+                accessibilityLabel="Morning briefing email"
                 value={preferences.data?.email_digest_enabled ?? false}
                 disabled={!preferences.data || updatePreferences.isPending}
                 onValueChange={(value) => updatePreference({ email_digest_enabled: value })}
@@ -547,9 +477,9 @@ export default function SettingsScreen() {
               />
             }
           />
-        </View>
+        </Panel>
 
-        <View style={styles.panel}>
+        <Panel>
           <SectionHeader title="Data and security" caption="How financial information is handled" />
           <SettingRow
             icon={<LockKeyhole size={17} color={colors.inkMuted} />}
@@ -563,7 +493,7 @@ export default function SettingsScreen() {
             caption="Plaid supplies money activity; Schwab supplies read-only investment positions"
             control={<ChevronRight size={16} color={colors.inkFaint} />}
           />
-        </View>
+        </Panel>
       </View>
       <Text style={styles.disclaimer}>
         Posted categorizes financial activity for planning purposes. Verify important amounts with your financial institution.
@@ -597,32 +527,9 @@ function SettingRow({
 
 const styles = StyleSheet.create({
   settingsGrid: { gap: 16, maxWidth: 920 },
-  panel: {
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    ...cardShadow,
-  },
-  connectionRow: { minHeight: 84, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  providerMark: {
-    width: 38,
-    height: 38,
-    backgroundColor: colors.tealSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerMarkText: {
-    color: colors.tealDark,
-    fontSize: 15,
-    fontWeight: '800',
-  },
   connectionCopy: { flex: 1 },
   connectionName: { color: colors.ink, fontSize: 13, fontWeight: '700' },
   connectionMeta: { color: colors.inkMuted, fontSize: 10, marginTop: 5 },
-  demoStatus: { paddingHorizontal: 8, height: 25, backgroundColor: colors.tealSoft, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  demoStatusText: { color: colors.tealDark, fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
   syncButton: {
     paddingHorizontal: 9,
     height: 28,
@@ -633,19 +540,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   syncButtonText: { color: colors.tealDark, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
-  connectionActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  unlinkButton: {
-    paddingHorizontal: 9,
-    height: 28,
-    borderWidth: 1,
-    borderColor: colors.negative,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  unlinkButtonPressed: { opacity: 0.55, backgroundColor: 'rgba(0,0,0,0.03)' },
-  unlinkButtonText: { color: colors.negative, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
-  connectButton: { height: 45, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  connectButton: { height: 45, borderTopWidth: 1, borderTopColor: roles.borderHairline, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connectButtonText: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
   connectButtonDisabled: { opacity: 0.5 },
   smsFormRow: {
@@ -655,13 +550,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
+    borderTopColor: roles.borderHairline,
   },
   textInput: {
     flex: 1,
     height: 40,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: roles.borderHairline,
     paddingHorizontal: 12,
     color: colors.ink,
     fontSize: 12,
@@ -689,13 +584,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 14,
   },
-  integrationRow: { minHeight: 78, padding: 16, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  integrationRow: { minHeight: 78, padding: 16, borderTopWidth: 1, borderTopColor: roles.borderHairline, flexDirection: 'row', alignItems: 'center', gap: 12 },
   integrationIcon: { width: 36, height: 36, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   readinessBadge: { paddingHorizontal: 8, height: 24, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   readinessBadgeReady: { backgroundColor: colors.positiveSoft },
   readinessText: { color: colors.inkMuted, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
   readinessTextReady: { color: colors.positive },
-  settingRow: { minHeight: 82, padding: 16, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingRow: { minHeight: 82, padding: 16, borderBottomWidth: 1, borderBottomColor: roles.borderHairline, flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingIcon: { width: 34, height: 34, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   settingCopy: { flex: 1 },
   settingTitle: { color: colors.ink, fontSize: 12, fontWeight: '700' },

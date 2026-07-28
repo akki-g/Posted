@@ -1,21 +1,29 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Redirect, useRouter } from 'expo-router';
-import { ArrowRight, Eye, EyeOff, RefreshCw } from 'lucide-react-native';
+import { useQuery } from '@tanstack/react-query';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ArrowRight, Eye, EyeOff } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
-import { DebriefPanel } from '@/components/DebriefPanel';
-import { EventList } from '@/components/EventList';
+import { Band } from '@/components/spine/Band';
+import { SyncSpine, type SyncTick } from '@/components/spine/SyncSpine';
 import { HoldingsList } from '@/components/HoldingsList';
-import { PortfolioChart } from '@/components/PortfolioChart';
-import { ActionButton, DemoBanner, ErrorState, LoadingState, SectionHeader } from '@/components/ui';
+import { MoneyAccountList, TransactionList } from '@/components/MoneyLists';
+import { DemoBanner, ErrorState, FilterChip, IconButton, LoadingState, Panel, StatTile } from '@/components/ui';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/AuthContext';
 import { setAssistantSection } from '@/lib/assistantSection';
-import { money, percent, relativeTime, signedMoney } from '@/lib/format';
-import type { ChartPoint } from '@/lib/types';
-import { cardShadow, colors, radius } from '@/theme/tokens';
+import { daysUntil, daysUntilNumber, money, relativeTime, signedMoney } from '@/lib/format';
+import { useConnectionSync } from '@/lib/useConnectionSync';
+import type { DashboardResponse, MoneyOverviewResponse } from '@/lib/types';
+import { colors, roles, spacing } from '@/theme/tokens';
+
+type Lens = 'everything' | 'cash' | 'investments';
+
+const LENS_LABEL: Record<Lens, string> = {
+  everything: 'Everything',
+  cash: 'Cash',
+  investments: 'Investments',
+};
 
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
@@ -24,297 +32,381 @@ function timeOfDayGreeting(): string {
   return 'GOOD EVENING';
 }
 
-export default function DashboardScreen() {
-  if (Platform.OS !== 'web') {
-    return <Redirect href="/money" />;
-  }
-
-  return <PortfolioDashboard />;
+function investmentMovementNote(dashboard: DashboardResponse): string | null {
+  const notable = dashboard.important_events.find(
+    (event) => event.unread && (event.level === 'urgent' || event.level === 'important') && event.securities.length > 0,
+  );
+  if (!notable) return null;
+  return `mostly ${notable.securities[0].symbol} — ${notable.headline}`;
 }
 
-function PortfolioDashboard() {
-  useEffect(() => setAssistantSection('investing'), []);
-  const { width } = useWindowDimensions();
-  const desktop = width >= 1080;
-  // The debrief sidebar needs more room than the general "desktop" breakpoint
-  // guarantees -- below this it stacks under the main content instead of
-  // squeezing both columns until they overlap.
-  const sideBySideSidebar = width >= 1680;
+function cashMovementNote(overview: MoneyOverviewResponse): string | null {
+  const top = overview.spending_by_category[0];
+  if (top && Number(top.percent) >= 30) {
+    return `${top.label.toLowerCase()} is ${Math.round(Number(top.percent))}% of the week's spending`;
+  }
+  return null;
+}
+
+export default function SpineScreen() {
+  const params = useLocalSearchParams<{ lens?: string }>();
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const lens: Lens = params.lens === 'cash' || params.lens === 'investments' ? params.lens : 'everything';
   const [privateMode, setPrivateMode] = useState(false);
-  const [portfolioInspection, setPortfolioInspection] = useState<ChartPoint | null>(null);
+
+  useEffect(() => {
+    setAssistantSection(lens === 'cash' ? 'money' : lens === 'investments' ? 'investing' : 'general');
+  }, [lens]);
+
   const dashboard = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections });
-  const debrief = useQuery({ queryKey: ['morning-debrief'], queryFn: api.morningDebrief });
   const moneyOverview = useQuery({ queryKey: ['money-overview'], queryFn: api.moneyOverview });
-  const firstName = user?.display_name.split(' ')[0]?.toUpperCase() ?? '';
-  const sync = useMutation({
-    mutationFn: async () => {
-      const connection = connections.data?.[0];
-      if (!connection) throw new Error('No brokerage connection found');
-      return api.sync(connection.id);
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['connections'] }),
-      ]);
-    },
+  const moneyConnections = useQuery({ queryKey: ['money-connections'], queryFn: api.moneyConnections });
+
+  const brokerageSync = useConnectionSync({
+    connections: connections.data?.map((connection) => ({
+      id: connection.id,
+      last_synced_at: connection.last_synced_at,
+      demo: connection.demo_mode,
+    })),
+    syncFn: api.sync,
+    invalidateKeys: [['dashboard'], ['connections'], ['holdings']],
+  });
+  const moneySync = useConnectionSync({
+    connections: moneyConnections.data?.map((connection) => ({
+      id: connection.id,
+      last_synced_at: connection.last_synced_at,
+      demo: connection.is_demo,
+    })),
+    syncFn: api.syncMoneyConnection,
+    invalidateKeys: [
+      ['money-overview'],
+      ['money-connections'],
+      ['money-transactions'],
+      ['subscriptions'],
+    ],
   });
 
+  const setLens = (next: Lens) => router.setParams({ lens: next });
+
+  const loading = dashboard.isLoading || moneyOverview.isLoading;
+  const loadError = dashboard.error ?? moneyOverview.error;
+  const data = dashboard.data && moneyOverview.data ? { dashboard: dashboard.data, money: moneyOverview.data } : null;
+
   const headerAction = (
-    <View style={styles.headerActions}>
-      <Pressable
-        accessibilityLabel={privateMode ? 'Show balances' : 'Hide balances'}
-        onPress={() => setPrivateMode((value) => !value)}
-        style={styles.privacyButton}>
-        {privateMode ? (
+    <IconButton
+      icon={
+        privateMode ? (
           <EyeOff size={17} color={colors.inkMuted} />
         ) : (
-          <Eye size={17} color={colors.inkMuted} />
-        )}
-      </Pressable>
-      <ActionButton
-        label={sync.isPending ? 'Syncing' : 'Sync now'}
-        disabled={sync.isPending}
-        onPress={() => sync.mutate()}
-        icon={<RefreshCw size={14} color={colors.white} />}
-      />
-    </View>
+          <Eye size={17} color={privateMode ? colors.tealDark : colors.inkMuted} />
+        )
+      }
+      accessibilityLabel={privateMode ? 'Show balances' : 'Hide balances'}
+      active={privateMode}
+      onPress={() => setPrivateMode((value) => !value)}
+    />
   );
 
   return (
     <AppShell
-      assistantContext={`The user is viewing their portfolio overview. The screen includes portfolio value, gains, accounts, holdings, impact events, and a 30-day performance chart. ${
-        portfolioInspection
-          ? `The currently inspected chart point is ${new Date(portfolioInspection.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} with an exact portfolio value of ${money(Number(portfolioInspection.value))}.`
-          : 'No portfolio chart point is currently available.'
-      } When the user says "this chart" or "this point", use that inspected value as the visual reference and fetch current portfolio facts with the available tools before answering.`}
-      assistantContextLabel="Portfolio overview · Live chart context"
-      title="Portfolio overview"
-      eyebrow={firstName ? `${timeOfDayGreeting()}, ${firstName}` : timeOfDayGreeting()}
-      headerAction={headerAction}>
-      {dashboard.isLoading ? <LoadingState /> : null}
-      {dashboard.isError ? (
-        <ErrorState message={dashboard.error.message} retry={() => dashboard.refetch()} />
-      ) : null}
-      {dashboard.data ? (
-        <View style={[styles.pageGrid, !sideBySideSidebar && styles.stack]}>
-          <View style={styles.mainColumn}>
-            {dashboard.data.portfolio.demo_mode ? <DemoBanner /> : null}
+      title="Overview"
+      eyebrow={`${timeOfDayGreeting()} · ${LENS_LABEL[lens].toUpperCase()}`}
+      headerAction={headerAction}
+      assistantSection={lens === 'cash' ? 'money' : lens === 'investments' ? 'investing' : 'general'}
+      assistantContext={`The user is viewing their net-worth overview, lensed to "${LENS_LABEL[lens]}". The screen includes position (net worth), day/week movement, per-connection sync freshness, items needing attention, and a ledger of holdings or transactions. Fetch current financial facts with the available tools before answering.`}
+      assistantContextLabel={`Overview · ${LENS_LABEL[lens]} lens`}
+      refreshing={brokerageSync.isPending || moneySync.isPending || dashboard.isRefetching || moneyOverview.isRefetching}
+      onRefresh={() => {
+        brokerageSync.mutate();
+        moneySync.mutate();
+        void dashboard.refetch();
+        void moneyOverview.refetch();
+      }}>
+      <View accessibilityRole="tablist" style={styles.lensRow}>
+        {(['everything', 'cash', 'investments'] as Lens[]).map((option) => (
+          <FilterChip
+            key={option}
+            label={LENS_LABEL[option]}
+            active={lens === option}
+            onPress={() => setLens(option)}
+          />
+        ))}
+      </View>
 
-            <View style={[styles.metrics, !desktop && styles.metricsWrapped]}>
-              <View style={[styles.metricCard, styles.primaryMetric]}>
-                <Text style={styles.metricLabel}>TOTAL PORTFOLIO VALUE</Text>
-                <Text style={styles.portfolioValue}>
-                  {privateMode ? '$••••••' : money(dashboard.data.portfolio.total_value)}
-                </Text>
-                <Text style={styles.metricCaption}>
-                  Across {dashboard.data.accounts.length} Schwab accounts
-                </Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>TODAY</Text>
-                <Text
-                  style={
-                    Number(dashboard.data.portfolio.day_change.amount) >= 0
-                      ? styles.positiveValue
-                      : styles.negativeValue
-                  }>
-                  {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.day_change.amount)}
-                </Text>
-                <Text
-                  style={
-                    Number(dashboard.data.portfolio.day_change.amount) >= 0
-                      ? styles.positiveCaption
-                      : styles.negativeCaption
-                  }>
-                  {percent(dashboard.data.portfolio.day_change.percent)}
-                </Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>TOTAL RETURN</Text>
-                <Text
-                  style={
-                    Number(dashboard.data.portfolio.total_gain.amount) >= 0
-                      ? styles.positiveValue
-                      : styles.negativeValue
-                  }>
-                  {privateMode ? '••••' : signedMoney(dashboard.data.portfolio.total_gain.amount)}
-                </Text>
-                <Text
-                  style={
-                    Number(dashboard.data.portfolio.total_gain.amount) >= 0
-                      ? styles.positiveCaption
-                      : styles.negativeCaption
-                  }>
-                  {percent(dashboard.data.portfolio.total_gain.percent)} all time
-                </Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>ATTENTION NEEDED</Text>
-                <Text style={styles.metricValue}>{dashboard.data.unread_event_count}</Text>
-                <Text style={styles.metricCaption}>Unread material updates</Text>
-              </View>
-            </View>
+      {loading ? <LoadingState label="Loading your overview" /> : null}
+      {loadError ? <ErrorState message={loadError.message} retry={() => { void dashboard.refetch(); void moneyOverview.refetch(); }} /> : null}
 
-            <View style={[styles.twoColumn, !desktop && styles.stack]}>
-              <View style={[styles.panel, styles.chartPanel]}>
-                <SectionHeader
-                  title="Portfolio performance"
-                  caption="Daily closing value · USD"
-                />
-                <PortfolioChart
-                  points={dashboard.data.history}
-                  onSelectionChange={setPortfolioInspection}
-                />
-              </View>
-              <View style={[styles.panel, styles.accountPanel]}>
-                <SectionHeader title="Accounts" caption="Consolidated from Schwab" />
-                {dashboard.data.accounts.map((account) => (
-                  <View key={account.id} style={styles.accountRow}>
-                    <View style={styles.accountMark} />
-                    <View style={styles.accountIdentity}>
-                      <Text style={styles.accountName}>{account.name}</Text>
-                      <Text style={styles.accountType}>{account.account_type}</Text>
-                    </View>
-                    <View style={styles.accountValueBlock}>
-                      <Text style={styles.accountValue}>
-                        {privateMode ? '$••••' : money(account.balance)}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.accountChange,
-                          { color: Number(account.day_change) >= 0 ? colors.positive : colors.negative },
-                        ]}>
-                        {signedMoney(account.day_change)}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-                <View style={styles.syncMeta}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.syncMetaText}>
-                    Last synced {dashboard.data.portfolio.last_synced_at ? relativeTime(dashboard.data.portfolio.last_synced_at) : 'never'}
-                  </Text>
-                </View>
-              </View>
-            </View>
+      {data ? (
+        <>
+          {data.dashboard.portfolio.demo_mode || data.money.demo_mode ? (
+            <DemoBanner message="Sample money and portfolio data. Connect Plaid and Schwab in Settings to replace it." />
+          ) : null}
 
-            <View style={[styles.twoColumn, !desktop && styles.stack]}>
-              <View style={[styles.panel, styles.holdingsPanel]}>
-                <SectionHeader
-                  title="Largest holdings"
-                  caption="Sorted by market value"
-                  action={
-                    <Pressable onPress={() => router.push('/holdings')} style={styles.textAction}>
-                      <Text style={styles.textActionLabel}>All holdings</Text>
-                      <ArrowRight size={14} color={colors.tealDark} />
-                    </Pressable>
-                  }
-                />
-                <HoldingsList holdings={dashboard.data.top_holdings} limit={5} compact />
-              </View>
-              <View style={[styles.panel, styles.feedPanel]}>
-                <SectionHeader
-                  title="Impact feed"
-                  caption="Ranked for your portfolio"
-                  action={
-                    <Pressable onPress={() => router.push('/feed')} style={styles.textAction}>
-                      <Text style={styles.textActionLabel}>Open feed</Text>
-                      <ArrowRight size={14} color={colors.tealDark} />
-                    </Pressable>
-                  }
-                />
-                <EventList events={dashboard.data.important_events.slice(0, 3)} />
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.sidebarColumn}>
-            <DebriefPanel
-              debrief={debrief.data}
-              debriefLoading={debrief.isLoading}
-              holdings={dashboard.data.top_holdings}
-              money={moneyOverview.data}
-              moneyLoading={moneyOverview.isLoading}
-              privateMode={privateMode}
-            />
-          </View>
-        </View>
+          <PositionBand lens={lens} dashboard={data.dashboard} money={data.money} privateMode={privateMode} />
+          <MovementBand lens={lens} dashboard={data.dashboard} money={data.money} privateMode={privateMode} />
+          <SyncBand lens={lens} connections={connections.data ?? []} moneyConnections={moneyConnections.data ?? []} />
+          <AttentionBand dashboard={data.dashboard} money={data.money} />
+          <LedgerBand lens={lens} dashboard={data.dashboard} money={data.money} />
+        </>
       ) : null}
     </AppShell>
   );
 }
 
+function PositionBand({
+  lens,
+  dashboard,
+  money: moneyData,
+  privateMode,
+}: {
+  lens: Lens;
+  dashboard: DashboardResponse;
+  money: MoneyOverviewResponse;
+  privateMode: boolean;
+}) {
+  if (lens === 'cash') {
+    return (
+      <Band label="POSITION" first>
+        <StatTile
+          label="NET CASH POSITION"
+          value={money(moneyData.net_cash_position)}
+          caption={`${money(moneyData.cash_balance)} cash less ${money(moneyData.card_balance)} on cards`}
+          size="primary"
+          masked={privateMode}
+        />
+      </Band>
+    );
+  }
+  if (lens === 'investments') {
+    return (
+      <Band label="POSITION" first>
+        <StatTile
+          label="TOTAL PORTFOLIO VALUE"
+          value={money(dashboard.portfolio.total_value)}
+          caption={`Across ${dashboard.accounts.length} account${dashboard.accounts.length === 1 ? '' : 's'}`}
+          size="primary"
+          masked={privateMode}
+        />
+      </Band>
+    );
+  }
+  const total = Number(dashboard.portfolio.total_value) + Number(moneyData.net_cash_position);
+  return (
+    <Band label="POSITION" first>
+      <StatTile
+        label="TOTAL NET WORTH"
+        value={money(total)}
+        caption={`${money(dashboard.portfolio.total_value)} invested · ${money(moneyData.net_cash_position)} cash`}
+        size="primary"
+        masked={privateMode}
+      />
+    </Band>
+  );
+}
+
+function MovementBand({
+  lens,
+  dashboard,
+  money: moneyData,
+  privateMode,
+}: {
+  lens: Lens;
+  dashboard: DashboardResponse;
+  money: MoneyOverviewResponse;
+  privateMode: boolean;
+}) {
+  const investingRow = (
+    <View style={styles.movementRow}>
+      <StatTile
+        label="TODAY"
+        value={signedMoney(dashboard.portfolio.day_change.amount)}
+        tone={Number(dashboard.portfolio.day_change.amount) >= 0 ? 'positive' : 'negative'}
+        masked={privateMode}
+      />
+      <StatTile
+        label="ALL TIME"
+        value={signedMoney(dashboard.portfolio.total_gain.amount)}
+        tone={Number(dashboard.portfolio.total_gain.amount) >= 0 ? 'positive' : 'negative'}
+        masked={privateMode}
+      />
+    </View>
+  );
+  const cashRow = (
+    <View style={styles.movementRow}>
+      <StatTile label="SPENT THIS WEEK" value={money(moneyData.weekly_spending)} masked={privateMode} />
+      <StatTile label="INCOME RECEIVED" value={money(moneyData.weekly_income)} masked={privateMode} />
+    </View>
+  );
+  const note = lens === 'cash' ? cashMovementNote(moneyData) : investmentMovementNote(dashboard);
+  return (
+    <Band label="MOVEMENT">
+      {lens === 'cash' ? cashRow : lens === 'investments' ? investingRow : (
+        <>
+          {investingRow}
+          {cashRow}
+        </>
+      )}
+      {note ? <Text style={styles.movementNote}>{note}</Text> : null}
+    </Band>
+  );
+}
+
+function SyncBand({
+  lens,
+  connections,
+  moneyConnections,
+}: {
+  lens: Lens;
+  connections: { id: string; display_name: string; last_synced_at: string | null; account_count: number; demo_mode: boolean }[];
+  moneyConnections: { id: string; display_name: string; last_synced_at: string | null; account_count: number; is_demo: boolean }[];
+}) {
+  const brokerageTicks: SyncTick[] = connections.map((connection) => ({
+    id: connection.id,
+    label: connection.display_name,
+    lastSyncedAt: connection.last_synced_at,
+    accountCount: connection.account_count,
+    demo: connection.demo_mode,
+  }));
+  const bankTicks: SyncTick[] = moneyConnections.map((connection) => ({
+    id: connection.id,
+    label: connection.display_name,
+    lastSyncedAt: connection.last_synced_at,
+    accountCount: connection.account_count,
+    demo: connection.is_demo,
+  }));
+  const ticks = lens === 'cash' ? bankTicks : lens === 'investments' ? brokerageTicks : [...bankTicks, ...brokerageTicks];
+  return (
+    <Band label="SYNC">
+      <SyncSpine ticks={ticks} />
+    </Band>
+  );
+}
+
+function AttentionBand({ dashboard, money: moneyData }: { dashboard: DashboardResponse; money: MoneyOverviewResponse }) {
+  const router = useRouter();
+  const events = dashboard.important_events
+    .filter((event) => event.unread)
+    .slice(0, 5)
+    .map((event) => ({
+      id: `event-${event.id}`,
+      label: event.headline,
+      meta: relativeTime(event.occurred_at),
+      urgent: event.level === 'urgent',
+    }));
+  const subscriptions = moneyData.subscriptions
+    .filter((stream) => daysUntilNumber(stream.next_expected_date) <= 7)
+    .slice(0, 5)
+    .map((stream) => ({
+      id: `sub-${stream.id}`,
+      label: `${stream.merchant_name} renews`,
+      meta: `${daysUntil(stream.next_expected_date)} · ${money(stream.average_amount)}`,
+      urgent: false,
+    }));
+  const items = [...events, ...subscriptions];
+  return (
+    <Band label={`ATTENTION${items.length > 0 ? ` (${items.length})` : ''}`}>
+      {items.length === 0 ? (
+        <Text style={styles.attentionEmpty}>Nothing needs a decision right now.</Text>
+      ) : (
+        <>
+          {items.map((item) => (
+            <View key={item.id} style={styles.attentionRow}>
+              <View style={[styles.attentionMark, item.urgent && styles.attentionMarkUrgent]} />
+              <Text style={styles.attentionLabel} numberOfLines={1}>
+                {item.label}
+              </Text>
+              <Text style={styles.attentionMeta}>{item.meta}</Text>
+            </View>
+          ))}
+          {events.length > 0 ? (
+            <View style={styles.attentionFooter}>
+              <TextLink label="Open feed" onPress={() => router.push('/portfolio?tab=feed')} />
+            </View>
+          ) : null}
+        </>
+      )}
+    </Band>
+  );
+}
+
+function LedgerBand({ lens, dashboard, money: moneyData }: { lens: Lens; dashboard: DashboardResponse; money: MoneyOverviewResponse }) {
+  const router = useRouter();
+  const holdings = (
+    <Panel style={styles.ledgerPanel}>
+      <View style={styles.ledgerHeader}>
+        <Text style={styles.ledgerTitle}>Holdings</Text>
+        <TextLink label="All holdings" onPress={() => router.push('/portfolio?tab=holdings')} />
+      </View>
+      <HoldingsList holdings={dashboard.top_holdings} limit={6} compact />
+    </Panel>
+  );
+  const transactions = (
+    <Panel style={styles.ledgerPanel}>
+      <View style={styles.ledgerHeader}>
+        <Text style={styles.ledgerTitle}>Recent transactions</Text>
+        <TextLink label="All transactions" onPress={() => router.push('/transactions')} />
+      </View>
+      <TransactionList transactions={moneyData.recent_transactions.slice(0, 6)} />
+    </Panel>
+  );
+  const accounts = (
+    <Panel style={styles.ledgerPanel}>
+      <View style={styles.ledgerHeader}>
+        <Text style={styles.ledgerTitle}>Accounts</Text>
+        <TextLink label="Manage" onPress={() => router.push('/settings')} />
+      </View>
+      <MoneyAccountList accounts={moneyData.accounts} />
+    </Panel>
+  );
+  return (
+    <Band label="LEDGER">
+      {lens === 'investments' ? holdings : lens === 'cash' ? (
+        <>
+          {transactions}
+          {accounts}
+        </>
+      ) : (
+        <>
+          {holdings}
+          {transactions}
+        </>
+      )}
+    </Band>
+  );
+}
+
+function TextLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="link" onPress={onPress} style={styles.textLink}>
+      <Text style={styles.textLinkLabel}>{label}</Text>
+      <ArrowRight size={13} color={colors.tealDark} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  privacyButton: {
-    width: 38,
-    height: 38,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 4,
-  },
-  pageGrid: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
-  mainColumn: { flex: 1.7, minWidth: 0 },
-  sidebarColumn: { flex: 1, minWidth: 300 },
-  metrics: { flexDirection: 'row', marginBottom: 16, gap: 1, backgroundColor: colors.line },
-  metricsWrapped: { flexWrap: 'wrap', gap: 1 },
-  metricCard: {
-    flex: 1,
-    minWidth: 180,
-    height: 134,
-    backgroundColor: colors.surface,
-    padding: 18,
-  },
-  primaryMetric: { flex: 1.5, minWidth: 270 },
-  metricLabel: { color: colors.inkFaint, fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
-  portfolioValue: { color: colors.ink, fontSize: 31, fontWeight: '600', marginTop: 14, fontVariant: ['tabular-nums'] },
-  metricValue: { color: colors.ink, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
-  positiveValue: { color: colors.positive, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
-  negativeValue: { color: colors.negative, fontSize: 23, fontWeight: '700', marginTop: 18, fontVariant: ['tabular-nums'] },
-  metricCaption: { color: colors.inkMuted, fontSize: 11, marginTop: 7 },
-  positiveCaption: { color: colors.positive, fontSize: 11, fontWeight: '600', marginTop: 7 },
-  negativeCaption: { color: colors.negative, fontSize: 11, fontWeight: '600', marginTop: 7 },
-  twoColumn: { flexDirection: 'row', gap: 16, marginBottom: 16, alignItems: 'stretch' },
-  stack: { flexDirection: 'column' },
-  panel: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    ...cardShadow,
-  },
-  chartPanel: { flex: 1.65, minHeight: 320 },
-  accountPanel: { flex: 1, minHeight: 320 },
-  holdingsPanel: { flex: 1.25 },
-  feedPanel: { flex: 1 },
-  accountRow: {
-    minHeight: 79,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+  lensRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md },
+  movementRow: { flexDirection: 'row', gap: spacing.lg, flexWrap: 'wrap' },
+  movementNote: { color: roles.textSecondary, fontSize: 12, lineHeight: 17, marginTop: spacing.xs },
+  attentionEmpty: { color: roles.textSecondary, fontSize: 12 },
+  attentionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 34 },
+  attentionMark: { width: 6, height: 6, borderRadius: 3, backgroundColor: roles.attentionNotable },
+  attentionMarkUrgent: { backgroundColor: roles.attentionUrgent },
+  attentionLabel: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 12, fontWeight: '600' },
+  attentionMeta: { color: roles.textSecondary, fontSize: 10 },
+  attentionFooter: { marginTop: spacing.xs },
+  ledgerPanel: { marginBottom: spacing.sm },
+  ledgerHeader: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: roles.borderHairline,
   },
-  accountMark: { width: 3, height: 32, backgroundColor: colors.teal },
-  accountIdentity: { flex: 1 },
-  accountName: { color: colors.ink, fontSize: 12, fontWeight: '600' },
-  accountType: { color: colors.inkMuted, fontSize: 10, marginTop: 4 },
-  accountValueBlock: { alignItems: 'flex-end' },
-  accountValue: { color: colors.ink, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  accountChange: { fontSize: 10, fontWeight: '600', marginTop: 4, fontVariant: ['tabular-nums'] },
-  syncMeta: { flex: 1, minHeight: 52, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.positive },
-  syncMetaText: { color: colors.inkMuted, fontSize: 10 },
-  textAction: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  textActionLabel: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
+  ledgerTitle: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  textLink: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  textLinkLabel: { color: colors.tealDark, fontSize: 11, fontWeight: '700' },
 });

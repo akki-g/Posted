@@ -12,7 +12,7 @@ client:
 
 check:
 	cd backend && uv run ruff check . && uv run pytest
-	cd apps/client && npm run typecheck && npm run export:web
+	cd apps/client && npm run typecheck && npm run test && npm run export:web
 
 learning-check:
 	cd backend && uv run pytest -m user_owned

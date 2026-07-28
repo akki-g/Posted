@@ -219,4 +219,4 @@ make docker-up      # PostgreSQL + API with demo data
 make docker-down
 ```
 
-The frontend visual language is original to Posted: dense trading-dashboard information hierarchy, restrained geometry, neutral surfaces, teal emphasis, and responsive table/card composition. It borrows enterprise dashboard placement patterns without using IBM branding or Carbon components.
+The frontend is built around the Position Spine: Money and Investing are lenses (Everything/Cash/Investments) over one net-worth overview, not separate destinations, with a tappable sync-freshness indicator driven by each connection's real `last_synced_at` rather than a decorative status dot. Visual language stays dense and trading-dashboard-flavored — restrained geometry, neutral surfaces, teal emphasis, Space Mono for every measured figure — with shared `Panel`/`StatTile`/`IconButton`/`ConnectionRow` primitives replacing what used to be independently reimplemented per screen. See `design/approved-design-system.md` and `design/migration-plan.md` for the full rationale and rollout.

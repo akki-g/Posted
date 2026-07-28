@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.money.enums import TransactionDirection, TransactionStatus
-from app.providers.plaid.mapper import map_plaid_transaction
+from app.providers.plaid.mapper import map_plaid_account_values, map_plaid_transaction
 
 
 def plaid_transaction(**overrides: object) -> dict[str, object]:
@@ -55,3 +55,53 @@ def test_pending_transaction_has_no_posted_time() -> None:
     assert result.status is TransactionStatus.PENDING
     assert result.posted_at is None
     assert result.pending_provider_transaction_id == "pending-previous"
+
+
+def test_map_plaid_account_values_maps_checking_account() -> None:
+    raw = {
+        "account_id": "plaid-checking-1",
+        "name": "Plaid Checking",
+        "official_name": "Plaid Gold Standard 0% Interest Checking",
+        "type": "depository",
+        "subtype": "checking",
+        "mask": "0000",
+        "balances": {
+            "current": 1250.45,
+            "available": 1200.00,
+            "iso_currency_code": "USD",
+        },
+    }
+
+    result = map_plaid_account_values(raw)
+
+    assert result["account_type"] == "checking"
+    assert result["subtype"] == "checking"
+    assert result["current_balance"] == Decimal("1250.45")
+    assert result["available_balance"] == Decimal("1200.00")
+    assert result["currency"] == "USD"
+    assert result["is_active"] is True
+
+
+def test_map_plaid_account_values_maps_credit_card_with_limit() -> None:
+    raw = {
+        "account_id": "plaid-credit-1",
+        "name": "Plaid Credit Card",
+        "type": "credit",
+        "subtype": "credit card",
+        "balances": {"current": 400, "limit": 5000},
+    }
+
+    result = map_plaid_account_values(raw)
+
+    assert result["account_type"] == "credit_card"
+    assert result["credit_limit"] == Decimal("5000")
+
+
+def test_map_plaid_account_values_defaults_unknown_type_to_other() -> None:
+    raw = {"account_id": "plaid-loan-1", "type": "investment", "balances": {}}
+
+    result = map_plaid_account_values(raw)
+
+    assert result["account_type"] == "other"
+    assert result["current_balance"] == Decimal("0")
+    assert result["currency"] == "USD"

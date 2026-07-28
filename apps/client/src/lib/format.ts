@@ -22,12 +22,16 @@ export function signedMoney(value: string | number): string {
   return `${amount >= 0 ? '+' : '-'}${money(Math.abs(amount))}`;
 }
 
-export function daysUntil(dateString: string): string {
+export function daysUntilNumber(dateString: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const target = new Date(dateString);
   target.setHours(0, 0, 0, 0);
-  const days = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function daysUntil(dateString: string): string {
+  const days = daysUntilNumber(dateString);
   if (days < 0) return 'Overdue';
   if (days === 0) return 'Today';
   if (days === 1) return 'Tomorrow';

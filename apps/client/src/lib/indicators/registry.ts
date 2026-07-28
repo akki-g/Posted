@@ -1,4 +1,4 @@
-import { colors } from '@/theme/tokens';
+import { chartCategorical } from '@/theme/tokens';
 import {
   calculateBollinger,
   calculateEma,
@@ -114,15 +114,10 @@ export const INDICATOR_CATEGORY_LABELS: Record<IndicatorCategory, string> = {
   volume: 'Volume',
 };
 
-export const INDICATOR_PALETTE: string[] = [
-  colors.blue,
-  colors.warning,
-  colors.purple,
-  colors.pink,
-  colors.orange,
-  colors.indigo,
-  colors.brown,
-];
+// Categorical identity color only — blue/warning are claimed semantic roles
+// elsewhere and must never double as a decorative, hash-assigned color; see
+// theme/tokens.ts's `chartCategorical` doc comment.
+export const INDICATOR_PALETTE: string[] = [...chartCategorical];
 
 export function nextIndicatorColor(usedColors: string[]): string {
   const available = INDICATOR_PALETTE.find((color) => !usedColors.includes(color));

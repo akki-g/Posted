@@ -34,7 +34,7 @@ from app.money.reconcile import reconcile_ledger
 from app.money.recurring import detect_recurring_transactions
 from app.money.spending import summarize_weekly_spending
 from app.providers.plaid.client import PlaidSyncPage
-from app.providers.plaid.mapper import map_plaid_transaction
+from app.providers.plaid.mapper import map_plaid_account_values, map_plaid_transaction
 
 
 class PlaidTransactionClient(Protocol):
@@ -44,6 +44,10 @@ class PlaidTransactionClient(Protocol):
         *,
         cursor: str | None = None,
     ) -> PlaidSyncPage: ...
+
+
+class PlaidMoneyClient(PlaidTransactionClient, Protocol):
+    async def get_accounts(self, access_token: str) -> tuple[dict[str, object], ...]: ...
 
 
 class PlaidSyncError(ValueError):
@@ -315,4 +319,44 @@ async def sync_plaid_transactions(
         rejected=len(normalized.rejected),
         synced_at=as_of,
         cursor=next_cursor,
+    )
+
+
+async def sync_plaid_money_connection(
+    session: AsyncSession,
+    *,
+    connection: FinancialConnection,
+    access_token: str,
+    client: PlaidMoneyClient,
+    as_of: datetime | None = None,
+) -> PlaidSyncSummary:
+    """Refresh account balances, then sync transactions, for one Plaid money connection."""
+
+    raw_accounts = await client.get_accounts(access_token)
+    for raw_account in raw_accounts:
+        provider_account_id = str(raw_account.get("account_id") or "")
+        if not provider_account_id:
+            continue
+        account = await session.scalar(
+            select(FinancialAccount).where(
+                FinancialAccount.connection_id == connection.id,
+                FinancialAccount.provider_account_id == provider_account_id,
+            )
+        )
+        values = map_plaid_account_values(raw_account)
+        if account is None:
+            session.add(
+                FinancialAccount(
+                    connection_id=connection.id,
+                    provider_account_id=provider_account_id,
+                    **values,
+                )
+            )
+        else:
+            for name, value in values.items():
+                setattr(account, name, value)
+    await session.flush()
+
+    return await sync_plaid_transactions(
+        session, connection=connection, access_token=access_token, client=client, as_of=as_of
     )

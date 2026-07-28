@@ -1,8 +1,8 @@
-import { AlertCircle, RefreshCw } from 'lucide-react-native';
+import { AlertCircle, RefreshCw, TrendingDown, TrendingUp, Unlink } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors } from '@/theme/tokens';
+import { colors, elevation, radius, roles, size, spacing, textStyle } from '@/theme/tokens';
 
 export function SectionHeader({
   title,
@@ -108,7 +108,287 @@ export function LevelPill({ level }: { level: string }) {
   );
 }
 
+const HIT_SLOP = (size.touchMin - size.controlSm) / 2;
+
+/** Replaces the bordered/shadowed container previously retyped verbatim in 9+ screen files. */
+export function Panel({
+  children,
+  variant = 'default',
+  tone = 'neutral',
+  style,
+}: {
+  children: ReactNode;
+  variant?: 'default' | 'inverted';
+  tone?: 'neutral' | 'stale' | 'demo';
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        styles.panel,
+        variant === 'inverted' && styles.panelInverted,
+        tone === 'stale' && styles.panelStaleRule,
+        tone === 'demo' && styles.panelDemoRule,
+        style,
+      ]}>
+      {tone === 'demo' ? (
+        <View style={styles.demoChip}>
+          <Text style={styles.demoChipText}>DEMO</Text>
+        </View>
+      ) : null}
+      {children}
+    </View>
+  );
+}
+
+function formatMasked(value: string): string {
+  const trimmed = value.trim();
+  const sign = trimmed.startsWith('+') || trimmed.startsWith('-') ? trimmed[0] : '';
+  const rest = sign ? trimmed.slice(1) : trimmed;
+  const currency = rest.startsWith('$') ? '$' : '';
+  return `${sign}${currency}••••`;
+}
+
+/** Replaces the label/value/caption stat block independently reimplemented in 7+ screen files. */
+export function StatTile({
+  label,
+  value,
+  caption,
+  tone = 'neutral',
+  size: tileSize = 'default',
+  masked = false,
+}: {
+  label: string;
+  value: string;
+  caption?: string;
+  tone?: 'neutral' | 'positive' | 'negative';
+  size?: 'default' | 'primary';
+  masked?: boolean;
+}) {
+  const Icon = tone === 'positive' ? TrendingUp : tone === 'negative' ? TrendingDown : null;
+  const toneColor = tone === 'positive' ? colors.positive : tone === 'negative' ? colors.negative : colors.ink;
+  return (
+    <View style={styles.statTile}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <View style={styles.statValueRow}>
+        {Icon ? <Icon size={tileSize === 'primary' ? 16 : 14} color={toneColor} /> : null}
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.statValue,
+            tileSize === 'primary' && styles.statValuePrimary,
+            { color: toneColor },
+          ]}>
+          {masked ? formatMasked(value) : value}
+        </Text>
+      </View>
+      {caption ? <Text style={styles.statCaption}>{caption}</Text> : null}
+    </View>
+  );
+}
+
+/** Replaces the 38x38/40x40 icon-only button drifting across 5+ screen files, all under the 44x44 touch-target floor. */
+export function IconButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+  active = false,
+  disabled = false,
+}: {
+  icon: ReactNode;
+  onPress: () => void;
+  accessibilityLabel: string;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled, selected: active }}
+      disabled={disabled}
+      hitSlop={HIT_SLOP}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconButton,
+        active && styles.iconButtonActive,
+        pressed && styles.iconButtonPressed,
+        disabled && styles.iconButtonDisabled,
+      ]}>
+      {icon}
+    </Pressable>
+  );
+}
+
+/** Replaces settings.tsx's ~90%-duplicated banking/investing connection row pair. */
+export function ConnectionRow({
+  name,
+  meta,
+  status,
+  onSync,
+  onUnlink,
+  syncing = false,
+  unlinking = false,
+}: {
+  name: string;
+  meta: string;
+  status: 'live' | 'stale' | 'demo' | 'error';
+  onSync?: () => void;
+  onUnlink?: () => void;
+  syncing?: boolean;
+  unlinking?: boolean;
+}) {
+  return (
+    <View style={styles.connectionRow}>
+      <View style={styles.connectionIdentity}>
+        <Text style={styles.connectionName}>{name}</Text>
+        <Text style={styles.connectionMeta}>{meta}</Text>
+      </View>
+      {status === 'demo' ? (
+        <View style={styles.demoChip}>
+          <Text style={styles.demoChipText}>DEMO</Text>
+        </View>
+      ) : (
+        <View style={styles.connectionActions}>
+          {status === 'stale' ? <View style={styles.staleDot} /> : null}
+          {onSync ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Sync ${name}`}
+              disabled={syncing}
+              onPress={onSync}
+              style={styles.syncButton}>
+              <RefreshCw size={12} color={colors.tealDark} />
+              <Text style={styles.syncButtonText}>{syncing ? 'SYNCING' : 'SYNC'}</Text>
+            </Pressable>
+          ) : null}
+          {onUnlink ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Unlink ${name}`}
+              disabled={unlinking}
+              onPress={onUnlink}
+              style={({ pressed }) => [styles.unlinkButton, pressed && styles.unlinkButtonPressed]}>
+              <Unlink size={12} color={colors.negative} />
+              <Text style={styles.unlinkButtonText}>{unlinking ? 'REMOVING' : 'UNLINK'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Unifies feed.tsx's navy-fill filter chip and transactions.tsx's tealSoft-fill filter chip into one treatment (the latter, kept — navy fill collides with navy meaning "hero/summary panel" elsewhere). */
+export function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.filterChip, active && styles.filterChipActive]}>
+      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  panel: {
+    borderWidth: 1,
+    borderColor: roles.borderHairline,
+    backgroundColor: roles.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...elevation.raised,
+  },
+  panelInverted: {
+    borderWidth: 0,
+    backgroundColor: roles.surfaceInverted,
+    borderRadius: radius.xl,
+  },
+  panelStaleRule: { borderTopWidth: 2, borderTopColor: roles.stale },
+  panelDemoRule: { borderTopWidth: 2, borderTopColor: roles.demo },
+  demoChip: {
+    alignSelf: 'flex-start',
+    margin: spacing.sm,
+    backgroundColor: colors.tealDark,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  demoChipText: { color: colors.white, ...textStyle.label },
+  statTile: { padding: spacing.md },
+  statLabel: { color: roles.textTertiary, ...textStyle.labelWide },
+  statValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.xs },
+  statValue: { ...textStyle.statValue, fontVariant: ['tabular-nums'] },
+  statValuePrimary: { ...textStyle.statValueLarge },
+  statCaption: { color: roles.textSecondary, ...textStyle.caption, marginTop: 4 },
+  iconButton: {
+    width: size.controlSm,
+    height: size.controlSm,
+    borderWidth: 1,
+    borderColor: roles.borderHairline,
+    backgroundColor: roles.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+  },
+  iconButtonActive: { backgroundColor: roles.accentSoft, borderColor: roles.accentSoftBorder },
+  iconButtonPressed: { backgroundColor: roles.surfaceSunken },
+  iconButtonDisabled: { opacity: 0.5 },
+  connectionRow: {
+    minHeight: 84,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  connectionIdentity: { flex: 1, minWidth: 0 },
+  connectionName: { color: roles.textPrimary, fontSize: 13, fontWeight: '700' },
+  connectionMeta: { color: roles.textSecondary, fontSize: 10, marginTop: 5 },
+  connectionActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  staleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: roles.stale },
+  syncButton: {
+    paddingHorizontal: 9,
+    height: 28,
+    borderWidth: 1,
+    borderColor: roles.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  syncButtonText: { color: colors.tealDark, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
+  unlinkButton: {
+    paddingHorizontal: 9,
+    height: 28,
+    borderWidth: 1,
+    borderColor: roles.negative,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  unlinkButtonPressed: { opacity: 0.55, backgroundColor: 'rgba(0,0,0,0.03)' },
+  unlinkButtonText: { color: colors.negative, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
+  filterChip: {
+    height: 32,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: roles.borderHairline,
+    backgroundColor: roles.surface,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipActive: { backgroundColor: roles.accentSoft, borderColor: roles.accentSoftBorder },
+  filterChipText: { color: roles.textSecondary, fontSize: 11, fontWeight: '600' },
+  filterChipTextActive: { color: roles.accent },
   sectionHeader: {
     minHeight: 58,
     flexDirection: 'row',

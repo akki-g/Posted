@@ -25,6 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db.models import AssistantMessage
 from app.providers.news.multi import MultiSourceNewsAdapter
+from app.services.connection_sync import (
+    sync_stale_brokerage_connections,
+    sync_stale_money_connections,
+)
 from app.services.dashboard import get_dashboard, get_feed, get_holdings
 from app.services.insider_analysis import get_insider_analysis
 from app.services.money import get_money_overview, get_money_transactions, get_recurring_streams
@@ -224,6 +228,24 @@ def _extract_sources(content_blocks: list[Any]) -> list[dict[str, str]]:
     return sources
 
 
+# Tools gated on a connection sync, split by which provider domain they actually read
+# (so a money-only question never pays for a Schwab/Plaid-investments round trip, and
+# vice versa). The impact feed and news search fetch independently from Finnhub/news
+# providers and aren't gated on either. get_insider_activity reads Finnhub sentiment
+# (independently fresh) but its analysis also calls get_holdings for position context,
+# so it needs the same brokerage-freshness guarantee as get_portfolio_holdings.
+_MONEY_BACKED_TOOLS = {
+    "get_money_overview",
+    "get_recent_transactions",
+    "get_recurring_subscriptions",
+}
+_BROKERAGE_BACKED_TOOLS = {
+    "get_portfolio_overview",
+    "get_portfolio_holdings",
+    "get_insider_activity",
+}
+
+
 async def _execute_tool(
     name: str,
     tool_input: dict[str, Any],
@@ -232,6 +254,11 @@ async def _execute_tool(
     user_id: UUID,
     settings: Settings,
 ) -> dict[str, Any]:
+    if name in _MONEY_BACKED_TOOLS:
+        await sync_stale_money_connections(session, user_id=user_id, settings=settings)
+    if name in _BROKERAGE_BACKED_TOOLS:
+        await sync_stale_brokerage_connections(session, user_id=user_id, settings=settings)
+
     if name == "get_money_overview":
         overview = await get_money_overview(session, user_id=user_id, demo_mode=settings.demo_mode)
         return {
