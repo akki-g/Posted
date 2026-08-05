@@ -636,3 +636,12 @@ async def test_run_assistant_turn_stays_on_the_default_model_without_stock_resea
         )
 
     assert mock_client.messages.create.await_args_list[0].kwargs["model"] == MODEL
+
+
+def test_system_prompt_directs_deep_dives_to_stock_research_tool() -> None:
+    assert "run_stock_research" in SYSTEM_PROMPT
+    assert "deep dive" in SYSTEM_PROMPT
+
+
+def test_system_prompt_treats_indicators_and_filings_as_context_not_signals() -> None:
+    assert "not trading signals" in SYSTEM_PROMPT
