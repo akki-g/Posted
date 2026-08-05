@@ -33,6 +33,7 @@ from app.services.dashboard import get_dashboard, get_feed, get_holdings
 from app.services.insider_analysis import get_insider_analysis
 from app.services.market_data import get_stock_indicators
 from app.services.money import get_money_overview, get_money_transactions, get_recurring_streams
+from app.services.sec_filings import get_recent_filings
 
 logger = structlog.get_logger()
 
@@ -211,6 +212,23 @@ TOOLS: list[dict[str, Any]] = [
             "RSI(14), stochastic oscillator, Bollinger Bands, ATR(14), and volume vs. its "
             "20-day average. Use this for questions about a stock's technical picture -- "
             "momentum, overbought/oversold, volatility, or unusual volume."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_sec_filings",
+        "description": (
+            "Get a ticker's recent material SEC filings (8-K, 10-K, 10-Q, 6-K, 20-F) with "
+            "filing date, a short description, and a link to the filing on EDGAR. Use for "
+            "questions about recent company disclosures or filings, separate from news "
+            "commentary."
         ),
         "input_schema": {
             "type": "object",
@@ -447,6 +465,15 @@ async def _execute_tool(
             return {"error": "no symbol provided"}
         indicators = await get_stock_indicators(symbol=symbol, settings=settings)
         return indicators.model_dump(mode="json")
+
+    if name == "get_sec_filings":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        try:
+            return await get_recent_filings(symbol=symbol, settings=settings)
+        except Exception as exc:  # noqa: BLE001 - a broken filings lookup must not crash the turn
+            return {"error": f"SEC filings lookup failed: {exc}"}
 
     return {"error": f"unknown tool {name}"}
 

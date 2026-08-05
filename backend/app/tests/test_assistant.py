@@ -493,3 +493,43 @@ async def test_send_message_persists_sources_on_the_assistant_row() -> None:
     assert row.sources == [{"title": "Federal Reserve", "url": "https://www.federalreserve.gov/x"}]
 
     await engine.dispose()
+
+
+async def test_execute_tool_does_not_sync_for_sec_filings() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_result = {"symbol": "AAPL", "filings": []}
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.get_recent_filings",
+                new=AsyncMock(return_value=fake_result),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "get_sec_filings",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(symbol="AAPL", settings=settings)
+        assert result == fake_result
+
+    await engine.dispose()
+
+
+def test_sec_filings_tool_is_registered() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "get_sec_filings")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "EDGAR" in tool["description"] or "SEC" in tool["description"]
