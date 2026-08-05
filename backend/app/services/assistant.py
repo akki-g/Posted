@@ -34,6 +34,7 @@ from app.services.insider_analysis import get_insider_analysis
 from app.services.market_data import get_stock_indicators
 from app.services.money import get_money_overview, get_money_transactions, get_recurring_streams
 from app.services.sec_filings import get_recent_filings
+from app.services.stock_research import run_stock_research
 
 logger = structlog.get_logger()
 
@@ -239,6 +240,27 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "run_stock_research",
+        "description": (
+            "Run a full independent research workup on a ticker: quote, fundamentals, "
+            "earnings, technical indicators (moving averages, MACD, RSI, stochastic, "
+            "Bollinger Bands, ATR, volume trend), insider transactions/sentiment with "
+            "interpretation, fresh multi-source news, and recent SEC filings -- all in one "
+            "call. Use this when the user clearly wants a full workup or deep dive on a "
+            "stock (e.g. 'give me a full research report on X', 'do a deep dive on Y'), not "
+            "for quick single-fact questions -- those should use the lighter, targeted "
+            "tools instead."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
     WEB_SEARCH_TOOL,
 ]
 
@@ -280,6 +302,7 @@ _BROKERAGE_BACKED_TOOLS = {
     "get_portfolio_overview",
     "get_portfolio_holdings",
     "get_insider_activity",
+    "run_stock_research",
 }
 
 
@@ -474,6 +497,12 @@ async def _execute_tool(
             return await get_recent_filings(symbol=symbol, settings=settings)
         except Exception as exc:  # noqa: BLE001 - a broken filings lookup must not crash the turn
             return {"error": f"SEC filings lookup failed: {exc}"}
+
+    if name == "run_stock_research":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        return await run_stock_research(session, user_id=user_id, symbol=symbol, settings=settings)
 
     return {"error": f"unknown tool {name}"}
 

@@ -216,13 +216,13 @@ async def test_execute_tool_syncs_only_money_connections_for_money_backed_reads(
 
 
 async def test_execute_tool_syncs_only_brokerage_connections_for_portfolio_reads() -> None:
-    # get_insider_activity is also brokerage-backed but needs a symbol input and a
-    # get_insider_analysis mock with a realistic shape -- covered by its own dedicated
-    # test below instead of this generic empty-input loop.
+    # get_insider_activity and run_stock_research are also brokerage-backed but need a
+    # symbol input and realistic mocks -- each has its own dedicated test instead of this
+    # generic empty-input loop.
     engine, session_factory, settings, user_id = await _user_session()
 
     async with session_factory() as session:
-        for tool_name in _BROKERAGE_BACKED_TOOLS - {"get_insider_activity"}:
+        for tool_name in _BROKERAGE_BACKED_TOOLS - {"get_insider_activity", "run_stock_research"}:
             with (
                 patch(
                     "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
@@ -533,3 +533,44 @@ def test_sec_filings_tool_is_registered() -> None:
 
     assert tool["input_schema"]["required"] == ["symbol"]
     assert "EDGAR" in tool["description"] or "SEC" in tool["description"]
+
+
+async def test_execute_tool_syncs_brokerage_connections_before_stock_research() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_result = {"symbol": "AAPL"}
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.run_stock_research",
+                new=AsyncMock(return_value=fake_result),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "run_stock_research",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_awaited_once_with(session, user_id=user_id, settings=settings)
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(session, user_id=user_id, symbol="AAPL", settings=settings)
+        assert result == fake_result
+
+    await engine.dispose()
+
+
+def test_run_stock_research_tool_is_registered_and_brokerage_backed() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "run_stock_research")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "deep dive" in tool["description"]
+    assert "run_stock_research" in _BROKERAGE_BACKED_TOOLS
