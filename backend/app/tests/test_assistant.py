@@ -11,7 +11,9 @@ from app.db.session import create_engine, create_session_factory
 from app.services.assistant import (
     _BROKERAGE_BACKED_TOOLS,
     _MONEY_BACKED_TOOLS,
+    MODEL,
     RELIABLE_DOMAINS,
+    RESEARCH_MODEL,
     SYSTEM_PROMPT,
     TOOLS,
     WEB_SEARCH_TOOL,
@@ -574,3 +576,63 @@ def test_run_stock_research_tool_is_registered_and_brokerage_backed() -> None:
     assert tool["input_schema"]["required"] == ["symbol"]
     assert "deep dive" in tool["description"]
     assert "run_stock_research" in _BROKERAGE_BACKED_TOOLS
+
+
+async def test_run_assistant_turn_escalates_to_sonnet_after_stock_research_tool_call() -> None:
+    tool_use_response = SimpleNamespace(
+        stop_reason="tool_use",
+        content=[
+            SimpleNamespace(
+                type="tool_use", id="tool-1", name="run_stock_research", input={"symbol": "NVDA"}
+            )
+        ],
+    )
+    final_response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text="Here's the research.", citations=None)],
+    )
+    mock_client = MagicMock()
+    mock_client.messages.create = AsyncMock(side_effect=[tool_use_response, final_response])
+
+    with (
+        patch("app.services.assistant.AsyncAnthropic", return_value=mock_client),
+        patch(
+            "app.services.assistant._execute_tool",
+            new=AsyncMock(return_value={"symbol": "NVDA"}),
+        ),
+    ):
+        result = await run_assistant_turn(
+            None,
+            user_id=uuid4(),
+            settings=Settings(anthropic_api_key="test-key"),
+            history=[],
+            user_message="Give me a full research report on NVDA",
+            section="investing",
+        )
+
+    first_model = mock_client.messages.create.await_args_list[0].kwargs["model"]
+    second_model = mock_client.messages.create.await_args_list[1].kwargs["model"]
+    assert first_model == MODEL
+    assert second_model == RESEARCH_MODEL
+    assert result.reply == "Here's the research."
+
+
+async def test_run_assistant_turn_stays_on_the_default_model_without_stock_research() -> None:
+    final_response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text="Your cash balance is $500.", citations=None)],
+    )
+    mock_client = MagicMock()
+    mock_client.messages.create = AsyncMock(return_value=final_response)
+
+    with patch("app.services.assistant.AsyncAnthropic", return_value=mock_client):
+        await run_assistant_turn(
+            None,
+            user_id=uuid4(),
+            settings=Settings(anthropic_api_key="test-key"),
+            history=[],
+            user_message="What's my cash balance?",
+            section="money",
+        )
+
+    assert mock_client.messages.create.await_args_list[0].kwargs["model"] == MODEL

@@ -39,6 +39,7 @@ from app.services.stock_research import run_stock_research
 logger = structlog.get_logger()
 
 MODEL = "claude-haiku-4-5"
+RESEARCH_MODEL = "claude-sonnet-5"
 MAX_TOOL_ITERATIONS = 6
 
 SECTION_FRAMING = {
@@ -550,10 +551,11 @@ async def run_assistant_turn(
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": user_message}]
 
     tool_calls_made = 0
+    active_model = MODEL
     for _ in range(MAX_TOOL_ITERATIONS):
         try:
             response = await client.messages.create(
-                model=MODEL,
+                model=active_model,
                 max_tokens=1500,
                 system=system,
                 tools=TOOLS,
@@ -603,6 +605,8 @@ async def run_assistant_turn(
         tool_use_blocks = [
             block for block in response.content if getattr(block, "type", None) == "tool_use"
         ]
+        if any(block.name == "run_stock_research" for block in tool_use_blocks):
+            active_model = RESEARCH_MODEL
         tool_results = []
         for block in tool_use_blocks:
             tool_calls_made += 1
