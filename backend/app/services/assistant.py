@@ -31,6 +31,7 @@ from app.services.connection_sync import (
 )
 from app.services.dashboard import get_dashboard, get_feed, get_holdings
 from app.services.insider_analysis import get_insider_analysis
+from app.services.market_data import get_stock_indicators
 from app.services.money import get_money_overview, get_money_transactions, get_recurring_streams
 
 logger = structlog.get_logger()
@@ -192,6 +193,24 @@ TOOLS: list[dict[str, Any]] = [
             "specific investment is moving or what insider activity means. Transaction codes "
             "separate discretionary purchases/sales from awards, gifts, tax withholding, and "
             "option exercises."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_technical_indicators",
+        "description": (
+            "Calculate current technical indicators for a ticker from its own daily price "
+            "history: moving averages (SMA 20/50/200, EMA 12/26) with a trend read, MACD, "
+            "RSI(14), stochastic oscillator, Bollinger Bands, ATR(14), and volume vs. its "
+            "20-day average. Use this for questions about a stock's technical picture -- "
+            "momentum, overbought/oversold, volatility, or unusual volume."
         ),
         "input_schema": {
             "type": "object",
@@ -421,6 +440,13 @@ async def _execute_tool(
             ],
             "data_caveat": analysis.disclaimer,
         }
+
+    if name == "get_technical_indicators":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        indicators = await get_stock_indicators(symbol=symbol, settings=settings)
+        return indicators.model_dump(mode="json")
 
     return {"error": f"unknown tool {name}"}
 

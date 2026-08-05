@@ -17,6 +17,7 @@ from app.db.models import (
     Position,
     Security,
 )
+from app.market.indicators import compute_technical_indicators
 from app.market.schemas import (
     CompanyProfile,
     MarketProviderStatus,
@@ -26,6 +27,7 @@ from app.market.schemas import (
     RelatedMarketNews,
     StockDetailResponse,
     StockHistoryResponse,
+    TechnicalIndicators,
 )
 from app.providers.market.alpaca import AlpacaMarketClient
 from app.providers.market.demo import (
@@ -341,6 +343,12 @@ async def get_stock_history(
             "Configure Alpaca credentials or enable the Yahoo fallback for price history."
         ),
     )
+
+
+async def get_stock_indicators(*, symbol: str, settings: Settings) -> TechnicalIndicators:
+    symbol = normalize_symbol(symbol)
+    history = await get_stock_history(symbol=symbol, period="1Y", settings=settings)
+    return compute_technical_indicators(symbol=symbol, bars=history.points)
 
 
 def normalize_symbol(value: str) -> str:

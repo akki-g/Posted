@@ -290,6 +290,46 @@ async def test_execute_tool_does_not_sync_for_company_news_search() -> None:
     await engine.dispose()
 
 
+async def test_execute_tool_does_not_sync_for_technical_indicators() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_indicators = SimpleNamespace(model_dump=lambda mode=None: {"symbol": "AAPL"})
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.get_stock_indicators",
+                new=AsyncMock(return_value=fake_indicators),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "get_technical_indicators",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(symbol="AAPL", settings=settings)
+        assert result == {"symbol": "AAPL"}
+
+    await engine.dispose()
+
+
+def test_technical_indicators_tool_is_registered() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "get_technical_indicators")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "RSI" in tool["description"]
+
+
 async def test_execute_tool_syncs_brokerage_connections_before_insider_activity() -> None:
     # get_insider_activity reads live position/holdings context via get_insider_analysis's
     # call to get_holdings, so it needs the same brokerage-freshness guarantee as
