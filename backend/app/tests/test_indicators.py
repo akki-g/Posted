@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.market.indicators import (
     atr,
     bollinger_bands,
+    compute_technical_indicators,
     ema_latest,
     ema_series,
     macd,
@@ -154,3 +155,46 @@ def test_volume_trend_returns_none_when_history_is_shorter_than_the_window() -> 
     bars = [_bar(high=1, low=1, close=1, volume=100)]
 
     assert volume_trend(bars, window=3) is None
+
+
+def _daily_bars(count: int) -> list[PriceBar]:
+    bars = []
+    for i in range(count):
+        close = 100.0 + i
+        bars.append(
+            PriceBar(
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                open=close,
+                high=close + 1,
+                low=close - 1,
+                close=close,
+                volume=1000,
+            )
+        )
+    return bars
+
+
+def test_compute_technical_indicators_degrades_gracefully_on_short_history() -> None:
+    result = compute_technical_indicators(symbol="test", bars=_daily_bars(25))
+
+    assert result.symbol == "TEST"
+    assert result.data_points == 25
+    assert result.moving_averages.sma_20 is not None
+    assert result.moving_averages.sma_50 is None
+    assert result.moving_averages.sma_200 is None
+    assert result.macd.macd_line is None
+    assert result.rsi.value is not None
+    assert result.bollinger_bands.upper is not None
+    assert result.atr.value is not None
+    assert result.volume_trend.ratio is not None
+    notes = result.insufficient_history_notes
+    assert any("SMA(50)" in note for note in notes)
+    assert any("SMA(200)" in note for note in notes)
+    assert any("MACD" in note for note in notes)
+
+
+def test_compute_technical_indicators_reads_reflect_thresholds() -> None:
+    rising = compute_technical_indicators(symbol="UP", bars=_daily_bars(200))
+
+    assert "Uptrend" in rising.moving_averages.read
+    assert "Overbought" in rising.rsi.read
