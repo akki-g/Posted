@@ -50,6 +50,8 @@ export default function RootLayout() {
             <Stack.Screen name="assistant" />
             <Stack.Screen name="event/[id]" />
             <Stack.Screen name="stock/[symbol]" />
+            <Stack.Screen name="privacy" />
+            <Stack.Screen name="terms" />
           </Stack>
         </AuthProvider>
       </QueryClientProvider>

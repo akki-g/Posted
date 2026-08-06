@@ -373,6 +373,20 @@ export default function SettingsScreen() {
               </Pressable>
             ) : null}
           </View>
+          {smsLinkStatus.data?.status !== 'verified' && smsLinkStatus.data?.status !== 'pending' ? (
+            <Text style={styles.connectionHelp}>
+              By entering your number and tapping "Send code," you agree to receive SMS messages
+              from Posted to verify your number and answer questions about your account. Message
+              frequency varies. Msg&data rates may apply. Reply STOP to opt out, HELP for help.{' '}
+              <Text style={styles.consentLink} onPress={() => router.push('/privacy')}>
+                Privacy Policy
+              </Text>
+              {' · '}
+              <Text style={styles.consentLink} onPress={() => router.push('/terms')}>
+                Terms of Service
+              </Text>
+            </Text>
+          ) : null}
           {smsLinkStatus.data?.status !== 'verified' ? (
             <View style={styles.smsFormRow}>
               {smsLinkStatus.data?.status !== 'pending' ? (
@@ -569,6 +583,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
   },
+  consentLink: { color: colors.tealDark, fontWeight: '700' },
   connectionSuccess: {
     color: colors.positive,
     fontSize: 10,

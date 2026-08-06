@@ -98,6 +98,42 @@ async def test_process_inbound_sms_replies_unlinked_for_an_unverified_number(mon
     await engine.dispose()
 
 
+async def test_process_inbound_sms_stop_synonyms_all_opt_out(monkeypatch) -> None:
+    """Carriers/TCR expect the full standard keyword set, not just the literal word STOP."""
+    from app.services import sms as sms_service
+
+    for keyword in ("UNSUBSCRIBE", "CANCEL", "END", "QUIT"):
+        sent = []
+
+        async def fake_send_sms(*, settings, to, text, _sent=sent) -> str:
+            _sent.append(text)
+            return "msg-id"
+
+        monkeypatch.setattr(sms_service, "send_sms", fake_send_sms)
+
+        engine, session_factory = await _session_factory()
+        user_id = uuid4()
+        async with session_factory() as session:
+            email = f"{keyword.lower()}-test@example.com"
+            session.add(User(id=user_id, email=email, display_name="Test User"))
+            session.add(
+                SmsLink(user_id=user_id, phone_number="+15550101234", verified_at=datetime.now(UTC))
+            )
+            await session.commit()
+
+        async with session_factory() as session:
+            await process_inbound_sms(
+                session, from_number="+15550101234", body=keyword, settings=Settings()
+            )
+        assert "opted out" in sent[-1]
+
+        async with session_factory() as session:
+            row = (await session.scalars(select(SmsLink).where(SmsLink.user_id == user_id))).one()
+            assert row.opted_out is True
+
+        await engine.dispose()
+
+
 async def test_process_inbound_sms_stop_persists_and_blocks_future_questions(monkeypatch) -> None:
     from app.services import sms as sms_service
 

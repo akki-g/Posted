@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -9,6 +10,17 @@ from app.db.base import Base
 from app.db.models import SmsLink, User
 from app.db.session import create_engine, create_session_factory
 from app.services.sms_link import generate_code, hash_code
+
+
+def _code_in(text: str) -> str | None:
+    """Pull a 6-digit code out of an SMS body, if present.
+
+    verify_code's success path now also sends a codeless opt-in-confirmation
+    text (see START_REPLY) through the same monkeypatched send_sms, so
+    callers must not assume every send carries a code.
+    """
+    match = re.search(r"\b(\d{6})\b", text)
+    return match.group(1) if match else None
 
 
 async def test_sms_link_round_trips_through_the_database() -> None:
@@ -67,6 +79,7 @@ async def test_request_code_sends_sms_and_returns_204(client: AsyncClient, monke
     assert response.status_code == 204
     assert sent["to"] == "+15550101234"
     assert "Posted verification code" in sent["text"]
+    assert "Reply STOP to opt out" in sent["text"]
 
 
 async def test_request_code_rejects_bad_phone_format(client: AsyncClient) -> None:
@@ -117,7 +130,9 @@ async def test_verify_code_marks_link_verified(client: AsyncClient, monkeypatch)
     sent = {}
 
     async def fake_send_sms(*, settings, to, text) -> str:
-        sent["code"] = text.split()[-1].rstrip(".")
+        code = _code_in(text)
+        if code is not None:
+            sent["code"] = code
         return "SMxxxx"
 
     monkeypatch.setattr(sms_link_routes, "send_sms", fake_send_sms)
@@ -129,6 +144,28 @@ async def test_verify_code_marks_link_verified(client: AsyncClient, monkeypatch)
     body = response.json()
     assert body["status"] == "verified"
     assert body["phone_number_masked"] == "•••• 1234"
+
+
+async def test_verify_code_sends_an_optin_confirmation_text(
+    client: AsyncClient, monkeypatch
+) -> None:
+    from app.api.routes import sms_link as sms_link_routes
+
+    sent = []
+
+    async def fake_send_sms(*, settings, to, text) -> str:
+        sent.append(text)
+        return "SMxxxx"
+
+    monkeypatch.setattr(sms_link_routes, "send_sms", fake_send_sms)
+
+    await client.post("/api/v1/settings/sms/request", json={"phone_number": "+15550101234"})
+    code = _code_in(sent[-1])
+    assert code is not None
+    response = await client.post("/api/v1/settings/sms/verify", json={"code": code})
+
+    assert response.status_code == 200
+    assert "set up to text Posted" in sent[-1]
 
 
 async def test_verify_code_rejects_wrong_code(client: AsyncClient, monkeypatch) -> None:
@@ -231,7 +268,9 @@ async def test_verify_code_transfers_ownership_from_a_previous_user(
     sent = {}
 
     async def fake_send_sms(*, settings, to, text) -> str:
-        sent["code"] = text.split()[-1].rstrip(".")
+        code = _code_in(text)
+        if code is not None:
+            sent["code"] = code
         return "SMxxxx"
 
     monkeypatch.setattr(sms_link_routes, "send_sms", fake_send_sms)
@@ -279,7 +318,9 @@ async def test_unlink_removes_a_verified_link(client: AsyncClient, monkeypatch) 
     sent = {}
 
     async def fake_send_sms(*, settings, to, text) -> str:
-        sent["code"] = text.split()[-1].rstrip(".")
+        code = _code_in(text)
+        if code is not None:
+            sent["code"] = code
         return "SMxxxx"
 
     monkeypatch.setattr(sms_link_routes, "send_sms", fake_send_sms)

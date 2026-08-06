@@ -21,7 +21,7 @@ logger = structlog.get_logger()
 HELP_REPLY = (
     "Posted: Text a question about your portfolio, spending, market news, or investments "
     "and we'll reply with a quick summary. Reply STOP to opt out, START to resume. "
-    "Msg&data rates may apply. Support: support@posted.app"
+    "Msg&data rates may apply. Support: akshat.guduru@gmail.com"
 )
 # Sent on START — doubles as the opt-in confirmation explaining how texting works.
 START_REPLY = (
@@ -36,6 +36,9 @@ STOP_REPLY = (
 )
 UNLINKED_REPLY = "Posted: this number is not linked for SMS. Link it from Posted Settings first."
 OPTED_OUT_REPLY = "Posted: you're opted out. Reply START to resume texting Posted."
+
+# Carriers/TCR expect the full standard opt-out keyword set, not just STOP.
+_STOP_SYNONYMS = frozenset({"STOP", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"})
 
 
 def normalize_phone(number: str) -> str:
@@ -102,7 +105,7 @@ async def process_inbound_sms(
     command = message.upper()
     if command == "HELP":
         reply = HELP_REPLY
-    elif command == "STOP":
+    elif command in _STOP_SYNONYMS:
         await _set_opted_out(session, from_number, opted_out=True)
         reply = STOP_REPLY
     elif command == "START":
