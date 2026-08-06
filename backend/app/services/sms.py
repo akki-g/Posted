@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import SmsLink
-from app.providers.signalwire.client import send_sms
+from app.providers.telnyx.client import send_sms
 from app.services.assistant import send_message
 
 logger = structlog.get_logger()
@@ -39,7 +39,7 @@ OPTED_OUT_REPLY = "Posted: you're opted out. Reply START to resume texting Poste
 
 
 def normalize_phone(number: str) -> str:
-    """Normalize enough for E.164 comparison; SignalWire supplies E.164 numbers."""
+    """Normalize enough for E.164 comparison; Telnyx supplies E.164 numbers."""
     return re.sub(r"[^0-9+]", "", number)
 
 
@@ -90,9 +90,9 @@ async def process_inbound_sms(
     body: str,
     settings: Settings,
 ) -> None:
-    """Process a single authenticated SignalWire inbound message.
+    """Process a single authenticated Telnyx inbound message.
 
-    The route that invokes this runs it after acknowledging SignalWire. The
+    The route that invokes this runs it after acknowledging Telnyx. The
     webhook delivery window is short; AI/tool calls must not hold that response.
     """
     message = body.strip()
@@ -130,4 +130,4 @@ async def process_inbound_sms(
     try:
         await send_sms(settings=settings, to=from_number, text=reply)
     except Exception:  # delivery failure must not crash the webhook worker
-        logger.exception("signalwire_sms_delivery_failed", recipient_suffix=from_number[-4:])
+        logger.exception("telnyx_sms_delivery_failed", recipient_suffix=from_number[-4:])

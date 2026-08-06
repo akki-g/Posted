@@ -101,7 +101,7 @@ async def test_request_code_surfaces_delivery_failure_as_502(
     from app.api.routes import sms_link as sms_link_routes
 
     async def failing_send_sms(*, settings, to, text) -> str:
-        raise RuntimeError("SignalWire rejected the destination")
+        raise RuntimeError("Telnyx rejected the destination")
 
     monkeypatch.setattr(sms_link_routes, "send_sms", failing_send_sms)
 

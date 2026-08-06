@@ -1,9 +1,13 @@
+import base64
+import json
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from asgi_lifespan import LifespanManager
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -12,15 +16,26 @@ from app.db.base import Base
 from app.db.models import SmsLink, User
 from app.db.session import create_engine, create_session_factory
 from app.main import create_app
-from app.services.signalwire_signature import calculate_legacy_signature
 from app.services.sms import find_verified_user, process_inbound_sms, section_for_sms
 
-TOKEN = "test-signalwire-token"  # noqa: S105 - fixture value, not a real secret
-URL = "https://example.trycloudflare.com/api/v1/webhooks/signalwire"
+PRIVATE_KEY = Ed25519PrivateKey.generate()
+PUBLIC_KEY = base64.b64encode(PRIVATE_KEY.public_key().public_bytes_raw()).decode()
 
 
-def _sign(url: str, params: dict[str, str], token: str = TOKEN) -> str:
-    return calculate_legacy_signature(token=token, url=url, form_fields=tuple(params.items()))
+def _sign(body: bytes, timestamp: str) -> str:
+    message = f"{timestamp}|".encode() + body
+    return base64.b64encode(PRIVATE_KEY.sign(message)).decode()
+
+
+def _inbound_payload(*, from_number: str, text: str, event_type: str = "message.received") -> bytes:
+    return json.dumps(
+        {
+            "data": {
+                "event_type": event_type,
+                "payload": {"from": {"phone_number": from_number}, "text": text},
+            }
+        }
+    ).encode()
 
 
 def test_sms_section_routing() -> None:
@@ -66,7 +81,7 @@ async def test_process_inbound_sms_replies_unlinked_for_an_unverified_number(mon
 
     async def fake_send_sms(*, settings, to, text) -> str:
         sent["text"] = text
-        return "SMxxxx"
+        return "msg-id"
 
     monkeypatch.setattr(sms_service, "send_sms", fake_send_sms)
 
@@ -90,7 +105,7 @@ async def test_process_inbound_sms_stop_persists_and_blocks_future_questions(mon
 
     async def fake_send_sms(*, settings, to, text) -> str:
         sent.append(text)
-        return "SMxxxx"
+        return "msg-id"
 
     monkeypatch.setattr(sms_service, "send_sms", fake_send_sms)
 
@@ -134,14 +149,12 @@ async def test_process_inbound_sms_stop_persists_and_blocks_future_questions(mon
 
 
 @pytest.fixture
-async def signalwire_client() -> AsyncIterator[AsyncClient]:
+async def telnyx_client() -> AsyncIterator[AsyncClient]:
     settings = Settings(
         app_env="test",
         database_url="sqlite+aiosqlite:///:memory:",
-        signalwire_signing_key=TOKEN,
-        signalwire_project_id="test-project",
-        signalwire_webhook_url=URL,
-        signalwire_allow_unsigned_webhooks=False,
+        telnyx_public_key=PUBLIC_KEY,
+        telnyx_allow_unsigned_webhooks=False,
     )
     app = create_app(settings)
     async with (
@@ -151,56 +164,72 @@ async def signalwire_client() -> AsyncIterator[AsyncClient]:
         yield http
 
 
-async def _post_signed(client: AsyncClient, params: dict[str, str], *, signature: str | None):
-    headers = {}
+async def _post_signed(
+    client: AsyncClient, body: bytes, *, signature: str | None, timestamp: str | None = None
+):
+    timestamp = timestamp or str(int(time.time()))
+    headers = {"Content-Type": "application/json", "telnyx-timestamp": timestamp}
     if signature is not None:
-        headers["X-Twilio-Signature"] = signature
-    return await client.post(
-        "/api/v1/webhooks/signalwire",
-        data=params,
-        headers=headers,
+        headers["telnyx-signature-ed25519"] = signature
+    return await client.post("/api/v1/webhooks/telnyx", content=body, headers=headers)
+
+
+async def test_valid_signed_callback_returns_204(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi")
+    timestamp = str(int(time.time()))
+    response = await _post_signed(
+        telnyx_client, body, signature=_sign(body, timestamp), timestamp=timestamp
     )
-
-
-async def test_valid_signed_callback_returns_204(signalwire_client: AsyncClient) -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
-    response = await _post_signed(signalwire_client, params, signature=_sign(URL, params))
     assert response.status_code == 204
 
 
-async def test_invalid_signature_returns_401(signalwire_client: AsyncClient) -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
-    response = await _post_signed(signalwire_client, params, signature="not-a-real-signature")
+async def test_invalid_signature_returns_401(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi")
+    response = await _post_signed(telnyx_client, body, signature="not-a-real-signature")
     assert response.status_code == 401
 
 
-async def test_missing_signature_returns_401(signalwire_client: AsyncClient) -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
-    response = await _post_signed(signalwire_client, params, signature=None)
+async def test_missing_signature_returns_401(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi")
+    response = await _post_signed(telnyx_client, body, signature=None)
     assert response.status_code == 401
 
 
-async def test_tampered_body_returns_401(signalwire_client: AsyncClient) -> None:
-    params = {"From": "+15550101234", "To": "+15550109999", "Body": "hi"}
-    signature = _sign(URL, params)
-    tampered = {**params, "Body": "bye"}
-    response = await _post_signed(signalwire_client, tampered, signature=signature)
+async def test_tampered_body_returns_401(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi")
+    timestamp = str(int(time.time()))
+    signature = _sign(body, timestamp)
+    tampered = _inbound_payload(from_number="+15550101234", text="bye")
+    response = await _post_signed(telnyx_client, tampered, signature=signature, timestamp=timestamp)
     assert response.status_code == 401
 
 
-async def test_status_callback_without_body_returns_204(signalwire_client: AsyncClient) -> None:
-    params = {"MessageSid": "SMxxxx", "MessageStatus": "delivered"}
-    response = await _post_signed(signalwire_client, params, signature=_sign(URL, params))
+async def test_stale_timestamp_returns_401(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi")
+    old_timestamp = str(int(time.time()) - 3600)
+    response = await _post_signed(
+        telnyx_client, body, signature=_sign(body, old_timestamp), timestamp=old_timestamp
+    )
+    assert response.status_code == 401
+
+
+async def test_non_message_received_event_returns_204(telnyx_client: AsyncClient) -> None:
+    body = _inbound_payload(from_number="+15550101234", text="hi", event_type="message.sent")
+    timestamp = str(int(time.time()))
+    response = await _post_signed(
+        telnyx_client, body, signature=_sign(body, timestamp), timestamp=timestamp
+    )
     assert response.status_code == 204
 
 
-async def test_malformed_utf8_body_returns_400(signalwire_client: AsyncClient) -> None:
-    response = await signalwire_client.post(
-        "/api/v1/webhooks/signalwire",
-        content=b"Body=\xff\xfe",
+async def test_malformed_json_body_returns_400(telnyx_client: AsyncClient) -> None:
+    response = await telnyx_client.post(
+        "/api/v1/webhooks/telnyx",
+        content=b"{not valid json",
         headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "X-Twilio-Signature": "irrelevant",
+            "Content-Type": "application/json",
+            "telnyx-signature-ed25519": "irrelevant",
+            "telnyx-timestamp": str(int(time.time())),
         },
     )
     assert response.status_code == 400

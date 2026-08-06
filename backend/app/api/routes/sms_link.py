@@ -13,7 +13,7 @@ from app.api.deps import get_app_settings, get_current_user_id, get_db
 from app.api.schemas import SmsLinkRequest, SmsLinkStatus, SmsVerifyRequest
 from app.config import Settings
 from app.db.models import SmsLink
-from app.providers.signalwire.client import send_sms
+from app.providers.telnyx.client import send_sms
 from app.services.sms import normalize_phone
 from app.services.sms_link import (
     CODE_TTL,
