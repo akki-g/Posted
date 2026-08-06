@@ -46,15 +46,26 @@ async def request_code(
     user_id: UUID = Depends(get_current_user_id),
     settings: Settings = Depends(get_app_settings),
 ) -> None:
-    phone_number = normalize_phone(body.phone_number)
-    if not PHONE_PATTERN.match(phone_number):
+    link = await session.scalar(select(SmsLink).where(SmsLink.user_id == user_id))
+
+    if body.phone_number:
+        phone_number = normalize_phone(body.phone_number)
+        if not PHONE_PATTERN.match(phone_number):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Enter a phone number in E.164 format, e.g. +15551234567.",
+            )
+    elif link is not None and link.phone_number:
+        # Resend: the client only ever sees a masked number, so it can't
+        # resupply one. Reuse the number already on file for this link.
+        phone_number = link.phone_number
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Enter a phone number in E.164 format, e.g. +15551234567.",
+            detail="Enter a phone number to link.",
         )
 
     now = datetime.now(UTC)
-    link = await session.scalar(select(SmsLink).where(SmsLink.user_id == user_id))
     if link is None:
         link = SmsLink(user_id=user_id, phone_number=phone_number)
         session.add(link)

@@ -166,7 +166,9 @@ class AuthUser(APIModel):
 
 
 class SmsLinkRequest(APIModel):
-    phone_number: str = Field(min_length=8, max_length=20)
+    # Optional: omitted on a resend, where the client only ever has the
+    # masked number and the server reuses the pending link's stored one.
+    phone_number: str | None = Field(default=None, min_length=8, max_length=20)
 
 
 class SmsVerifyRequest(APIModel):

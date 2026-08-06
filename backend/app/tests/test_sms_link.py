@@ -89,6 +89,43 @@ async def test_request_code_rejects_bad_phone_format(client: AsyncClient) -> Non
     assert response.status_code == 400
 
 
+async def test_request_code_without_a_body_rejects_when_no_pending_link_exists(
+    client: AsyncClient,
+) -> None:
+    response = await client.post("/api/v1/settings/sms/request", json={})
+    assert response.status_code == 400
+
+
+async def test_resend_without_a_phone_number_reuses_the_pending_links_number(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """Regression test: the client only ever has a masked number once a code has
+    been sent, so a page refresh mid-flow leaves it with nothing to resupply.
+    Resend must fall back to the number already stored on the pending link
+    instead of requiring the client to resend the (unavailable) full number."""
+    from datetime import timedelta
+
+    from app.api.routes import sms_link as sms_link_routes
+
+    sent = []
+
+    async def fake_send_sms(*, settings, to, text) -> str:
+        sent.append(to)
+        return "SMxxxx"
+
+    monkeypatch.setattr(sms_link_routes, "send_sms", fake_send_sms)
+    monkeypatch.setattr(sms_link_routes, "RESEND_COOLDOWN", timedelta(seconds=0))
+
+    first = await client.post(
+        "/api/v1/settings/sms/request", json={"phone_number": "+15550101234"}
+    )
+    assert first.status_code == 204
+
+    resend = await client.post("/api/v1/settings/sms/request", json={})
+    assert resend.status_code == 204
+    assert sent == ["+15550101234", "+15550101234"]
+
+
 async def test_request_code_enforces_resend_cooldown(client: AsyncClient, monkeypatch) -> None:
     from app.api.routes import sms_link as sms_link_routes
 

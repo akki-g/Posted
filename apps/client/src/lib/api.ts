@@ -49,8 +49,22 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     const body = await response.text();
     let message = body;
     try {
-      const parsed = JSON.parse(body) as { detail?: string };
-      message = parsed.detail ?? body;
+      const parsed = JSON.parse(body) as { detail?: unknown };
+      if (typeof parsed.detail === 'string') {
+        message = parsed.detail;
+      } else if (Array.isArray(parsed.detail)) {
+        // FastAPI's automatic validation-error shape: a list of {msg, loc, type}.
+        message = parsed.detail
+          .map((item) =>
+            item && typeof item === 'object' && 'msg' in item
+              ? String((item as { msg: unknown }).msg)
+              : JSON.stringify(item),
+          )
+          .join(' ');
+      } else if (parsed.detail != null) {
+        message =
+          typeof parsed.detail === 'object' ? JSON.stringify(parsed.detail) : String(parsed.detail);
+      }
     } catch {
       // Keep non-JSON provider and proxy errors readable.
     }
@@ -135,10 +149,10 @@ export const api = {
   clearAssistantConversation: () =>
     request<void>('/assistant/messages', { method: 'DELETE' }),
   smsLinkStatus: () => request<SmsLinkStatus>('/settings/sms/link'),
-  requestSmsLink: (phoneNumber: string) =>
+  requestSmsLink: (phoneNumber?: string) =>
     request<void>('/settings/sms/request', {
       method: 'POST',
-      body: JSON.stringify({ phone_number: phoneNumber }),
+      body: JSON.stringify({ phone_number: phoneNumber || undefined }),
     }),
   verifySmsLink: (code: string) =>
     request<SmsLinkStatus>('/settings/sms/verify', {

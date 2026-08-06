@@ -361,14 +361,18 @@ export default function SettingsScreen() {
                 </>
               )}
             </View>
-            {smsLinkStatus.data?.status === 'verified' ? (
+            {smsLinkStatus.data?.status === 'verified' || smsLinkStatus.data?.status === 'pending' ? (
               <Pressable
                 accessibilityRole="button"
                 disabled={unlinkSmsLink.isPending}
                 onPress={() => unlinkSmsLink.mutate()}
                 style={styles.syncButton}>
                 <Text style={styles.syncButtonText}>
-                  {unlinkSmsLink.isPending ? 'REMOVING' : 'UNLINK'}
+                  {unlinkSmsLink.isPending
+                    ? 'REMOVING'
+                    : smsLinkStatus.data?.status === 'pending'
+                      ? 'CANCEL'
+                      : 'UNLINK'}
                 </Text>
               </Pressable>
             ) : null}
