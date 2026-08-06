@@ -5,6 +5,7 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +15,7 @@ from app.api.schemas import SmsLinkRequest, SmsLinkStatus, SmsVerifyRequest
 from app.config import Settings
 from app.db.models import SmsLink
 from app.providers.telnyx.client import send_sms
-from app.services.sms import normalize_phone
+from app.services.sms import START_REPLY, normalize_phone
 from app.services.sms_link import (
     CODE_TTL,
     MAX_REQUESTS_PER_WINDOW,
@@ -26,6 +27,7 @@ from app.services.sms_link import (
 )
 
 router = APIRouter(prefix="/settings/sms", tags=["sms-link"])
+logger = structlog.get_logger()
 
 PHONE_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 
@@ -90,7 +92,12 @@ async def request_code(
 
     try:
         await send_sms(
-            settings=settings, to=phone_number, text=f"Your Posted verification code is {code}."
+            settings=settings,
+            to=phone_number,
+            text=(
+                f"Your Posted verification code is {code}. "
+                "Reply STOP to opt out, HELP for help. Msg&data rates may apply."
+            ),
         )
     except Exception as exc:
         raise HTTPException(
@@ -149,7 +156,13 @@ async def verify_code(
     link.code_hash = None
     link.code_expires_at = None
     link.attempt_count = 0
+    phone_number = link.phone_number
     await session.commit()
+
+    try:
+        await send_sms(settings=settings, to=phone_number, text=START_REPLY)
+    except Exception:  # opt-in already succeeded; a confirmation failure must not fail the request
+        logger.exception("telnyx_optin_confirmation_failed", recipient_suffix=phone_number[-4:])
 
     return SmsLinkStatus(
         status="verified", phone_number_masked=_mask(link.phone_number), opted_out=link.opted_out
