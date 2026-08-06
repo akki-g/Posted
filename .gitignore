@@ -36,3 +36,5 @@ output/playwright/
 
 # agent docs
 docs/
+# git worktrees for isolated subagent-driven work
+.worktrees/

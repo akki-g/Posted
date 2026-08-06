@@ -31,11 +31,15 @@ from app.services.connection_sync import (
 )
 from app.services.dashboard import get_dashboard, get_feed, get_holdings
 from app.services.insider_analysis import get_insider_analysis
+from app.services.market_data import get_stock_indicators
 from app.services.money import get_money_overview, get_money_transactions, get_recurring_streams
+from app.services.sec_filings import get_recent_filings
+from app.services.stock_research import run_stock_research
 
 logger = structlog.get_logger()
 
 MODEL = "claude-haiku-4-5"
+RESEARCH_MODEL = "claude-sonnet-5"
 MAX_TOOL_ITERATIONS = 6
 
 SECTION_FRAMING = {
@@ -70,6 +74,15 @@ SYSTEM_PROMPT = (
     "and news tools. Separate reported facts from inference, distinguish open-market trades from "
     "awards/options/gifts, and never imply insider activity caused a price move without direct "
     "evidence.\n"
+    "- When the user clearly wants a full workup or deep dive on a stock (e.g. 'give me a "
+    "full research report on X', 'do a deep dive on Y'), use run_stock_research rather than "
+    "assembling the same picture from individual tools one at a time. For quick single-fact "
+    "questions -- a price, a single indicator, a specific filing -- use the lighter targeted "
+    "tool instead and do not over-fetch.\n"
+    "- Technical indicators and SEC filings are informational context, not trading signals: "
+    "never frame an indicator reading or a filing as a reason to buy, sell, or hold, and "
+    "always note when there isn't enough price history to compute an indicator rather than "
+    "guessing.\n"
     "- For investment analysis, go beyond a surface recap: connect signal strength and trend to "
     "the user's position weight, gain/loss, recent price move, news, and upcoming decision points. "
     "Explicitly state data gaps and plausible alternative explanations.\n"
@@ -202,6 +215,62 @@ TOOLS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "get_technical_indicators",
+        "description": (
+            "Calculate current technical indicators for a ticker from its own daily price "
+            "history: moving averages (SMA 20/50/200, EMA 12/26) with a trend read, MACD, "
+            "RSI(14), stochastic oscillator, Bollinger Bands, ATR(14), and volume vs. its "
+            "20-day average. Use this for questions about a stock's technical picture -- "
+            "momentum, overbought/oversold, volatility, or unusual volume."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_sec_filings",
+        "description": (
+            "Get a ticker's recent material SEC filings (8-K, 10-K, 10-Q, 6-K, 20-F) with "
+            "filing date, a short description, and a link to the filing on EDGAR. Use for "
+            "questions about recent company disclosures or filings, separate from news "
+            "commentary."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "run_stock_research",
+        "description": (
+            "Run a full independent research workup on a ticker: quote, fundamentals, "
+            "earnings, technical indicators (moving averages, MACD, RSI, stochastic, "
+            "Bollinger Bands, ATR, volume trend), insider transactions/sentiment with "
+            "interpretation, fresh multi-source news, and recent SEC filings -- all in one "
+            "call. Use this when the user clearly wants a full workup or deep dive on a "
+            "stock (e.g. 'give me a full research report on X', 'do a deep dive on Y'), not "
+            "for quick single-fact questions -- those should use the lighter, targeted "
+            "tools instead."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL."},
+            },
+            "required": ["symbol"],
+            "additionalProperties": False,
+        },
+    },
     WEB_SEARCH_TOOL,
 ]
 
@@ -243,6 +312,7 @@ _BROKERAGE_BACKED_TOOLS = {
     "get_portfolio_overview",
     "get_portfolio_holdings",
     "get_insider_activity",
+    "run_stock_research",
 }
 
 
@@ -422,6 +492,28 @@ async def _execute_tool(
             "data_caveat": analysis.disclaimer,
         }
 
+    if name == "get_technical_indicators":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        indicators = await get_stock_indicators(symbol=symbol, settings=settings)
+        return indicators.model_dump(mode="json")
+
+    if name == "get_sec_filings":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        try:
+            return await get_recent_filings(symbol=symbol, settings=settings)
+        except Exception as exc:  # noqa: BLE001 - a broken filings lookup must not crash the turn
+            return {"error": f"SEC filings lookup failed: {exc}"}
+
+    if name == "run_stock_research":
+        symbol = str(tool_input.get("symbol", "")).strip().upper()
+        if not symbol:
+            return {"error": "no symbol provided"}
+        return await run_stock_research(session, user_id=user_id, symbol=symbol, settings=settings)
+
     return {"error": f"unknown tool {name}"}
 
 
@@ -468,10 +560,11 @@ async def run_assistant_turn(
     messages: list[dict[str, Any]] = [*history, {"role": "user", "content": user_message}]
 
     tool_calls_made = 0
+    active_model = MODEL
     for _ in range(MAX_TOOL_ITERATIONS):
         try:
             response = await client.messages.create(
-                model=MODEL,
+                model=active_model,
                 max_tokens=1500,
                 system=system,
                 tools=TOOLS,
@@ -521,6 +614,8 @@ async def run_assistant_turn(
         tool_use_blocks = [
             block for block in response.content if getattr(block, "type", None) == "tool_use"
         ]
+        if any(block.name == "run_stock_research" for block in tool_use_blocks):
+            active_model = RESEARCH_MODEL
         tool_results = []
         for block in tool_use_blocks:
             tool_calls_made += 1

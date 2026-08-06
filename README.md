@@ -164,11 +164,14 @@ the existing assistant and sends the concise reply back as SMS. It is not enable
 until the Telnyx variables in `.env` are supplied.
 
 1. Create a separate **development** Telnyx API key, buy/assign an SMS-capable
-   number to a Messaging Profile, and copy the Telnyx public key. Do not use a
-   production key locally.
+   number to a Messaging Profile, and copy the account's Ed25519 public key
+   from the Mission Control Portal. Do not use a production key locally.
 2. Set `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER` (E.164), `TELNYX_PUBLIC_KEY`, and
    `TELNYX_LOCAL_TEST_PHONE` (your E.164 mobile number) in `.env`. The latter is
-   intentionally mapped only to `DEV_USER_ID` in development.
+   intentionally mapped only to `DEV_USER_ID` in development. Unlike a
+   Twilio-compatible provider, Telnyx's signature does not cover the webhook
+   URL, so there's no separate webhook-url setting to keep in sync behind a
+   tunnel.
 3. Start the API with `make api`, then expose it with `ngrok http 8000`.
 4. Set the Messaging Profile's primary webhook to
    `https://YOUR-NGROK-DOMAIN/api/v1/webhooks/telnyx`. Leave webhook signing on;

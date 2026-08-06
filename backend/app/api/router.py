@@ -12,8 +12,8 @@ from app.api.routes import (
     plaid_investments,
     portfolio,
     settings,
-    signalwire,
     sms_link,
+    telnyx,
 )
 
 api_router = APIRouter()
@@ -29,4 +29,4 @@ api_router.include_router(plaid.router)
 api_router.include_router(plaid_investments.router)
 api_router.include_router(assistant.router)
 api_router.include_router(market.router)
-api_router.include_router(signalwire.router)
+api_router.include_router(telnyx.router)

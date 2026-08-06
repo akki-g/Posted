@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -10,6 +11,10 @@ from app.domain.models import ProviderEventEnvelope
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}"
 DEFAULT_FORMS = frozenset({"8-K", "10-K", "10-Q", "6-K", "20-F"})
+TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json"
+_TICKER_CIK_CACHE_TTL_SECONDS = 24 * 60 * 60
+_TICKER_CIK_CACHE: dict[str, str] = {}
+_TICKER_CIK_CACHE_LOADED_AT: float | None = None
 
 
 class SecEdgarAdapter:
@@ -59,6 +64,40 @@ class SecEdgarAdapter:
             if owns_client:
                 await client.aclose()
         return tuple(sorted(events, key=lambda event: event.published_at, reverse=True))
+
+    async def resolve_cik(self, symbol: str) -> str | None:
+        await self._ensure_ticker_cache()
+        return _TICKER_CIK_CACHE.get(symbol.upper())
+
+    async def _ensure_ticker_cache(self) -> None:
+        global _TICKER_CIK_CACHE_LOADED_AT
+        now = time.monotonic()
+        if (
+            _TICKER_CIK_CACHE_LOADED_AT is not None
+            and now - _TICKER_CIK_CACHE_LOADED_AT < _TICKER_CIK_CACHE_TTL_SECONDS
+        ):
+            return
+        owns_client = self._http is None
+        client = self._http or httpx.AsyncClient(
+            timeout=20, headers={"User-Agent": self._user_agent, "Accept": "application/json"}
+        )
+        try:
+            response = await client.get(
+                TICKER_MAP_URL,
+                headers={"User-Agent": self._user_agent, "Accept": "application/json"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        finally:
+            if owns_client:
+                await client.aclose()
+        _TICKER_CIK_CACHE.clear()
+        for entry in payload.values():
+            ticker = str(entry.get("ticker") or "").upper()
+            cik = entry.get("cik_str")
+            if ticker and cik is not None:
+                _TICKER_CIK_CACHE[ticker] = str(cik)
+        _TICKER_CIK_CACHE_LOADED_AT = now
 
 
 def _map_recent_filings(

@@ -11,7 +11,9 @@ from app.db.session import create_engine, create_session_factory
 from app.services.assistant import (
     _BROKERAGE_BACKED_TOOLS,
     _MONEY_BACKED_TOOLS,
+    MODEL,
     RELIABLE_DOMAINS,
+    RESEARCH_MODEL,
     SYSTEM_PROMPT,
     TOOLS,
     WEB_SEARCH_TOOL,
@@ -216,13 +218,13 @@ async def test_execute_tool_syncs_only_money_connections_for_money_backed_reads(
 
 
 async def test_execute_tool_syncs_only_brokerage_connections_for_portfolio_reads() -> None:
-    # get_insider_activity is also brokerage-backed but needs a symbol input and a
-    # get_insider_analysis mock with a realistic shape -- covered by its own dedicated
-    # test below instead of this generic empty-input loop.
+    # get_insider_activity and run_stock_research are also brokerage-backed but need a
+    # symbol input and realistic mocks -- each has its own dedicated test instead of this
+    # generic empty-input loop.
     engine, session_factory, settings, user_id = await _user_session()
 
     async with session_factory() as session:
-        for tool_name in _BROKERAGE_BACKED_TOOLS - {"get_insider_activity"}:
+        for tool_name in _BROKERAGE_BACKED_TOOLS - {"get_insider_activity", "run_stock_research"}:
             with (
                 patch(
                     "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
@@ -288,6 +290,46 @@ async def test_execute_tool_does_not_sync_for_company_news_search() -> None:
         money_sync.assert_not_awaited()
 
     await engine.dispose()
+
+
+async def test_execute_tool_does_not_sync_for_technical_indicators() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_indicators = SimpleNamespace(model_dump=lambda mode=None: {"symbol": "AAPL"})
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.get_stock_indicators",
+                new=AsyncMock(return_value=fake_indicators),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "get_technical_indicators",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(symbol="AAPL", settings=settings)
+        assert result == {"symbol": "AAPL"}
+
+    await engine.dispose()
+
+
+def test_technical_indicators_tool_is_registered() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "get_technical_indicators")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "RSI" in tool["description"]
 
 
 async def test_execute_tool_syncs_brokerage_connections_before_insider_activity() -> None:
@@ -453,3 +495,153 @@ async def test_send_message_persists_sources_on_the_assistant_row() -> None:
     assert row.sources == [{"title": "Federal Reserve", "url": "https://www.federalreserve.gov/x"}]
 
     await engine.dispose()
+
+
+async def test_execute_tool_does_not_sync_for_sec_filings() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_result = {"symbol": "AAPL", "filings": []}
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.get_recent_filings",
+                new=AsyncMock(return_value=fake_result),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "get_sec_filings",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_not_awaited()
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(symbol="AAPL", settings=settings)
+        assert result == fake_result
+
+    await engine.dispose()
+
+
+def test_sec_filings_tool_is_registered() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "get_sec_filings")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "EDGAR" in tool["description"] or "SEC" in tool["description"]
+
+
+async def test_execute_tool_syncs_brokerage_connections_before_stock_research() -> None:
+    engine, session_factory, settings, user_id = await _user_session()
+
+    fake_result = {"symbol": "AAPL"}
+
+    async with session_factory() as session:
+        with (
+            patch(
+                "app.services.assistant.sync_stale_brokerage_connections", new=AsyncMock()
+            ) as brokerage_sync,
+            patch(
+                "app.services.assistant.sync_stale_money_connections", new=AsyncMock()
+            ) as money_sync,
+            patch(
+                "app.services.assistant.run_stock_research",
+                new=AsyncMock(return_value=fake_result),
+            ) as lookup,
+        ):
+            result = await _execute_tool(
+                "run_stock_research",
+                {"symbol": "aapl"},
+                session=session,
+                user_id=user_id,
+                settings=settings,
+            )
+        brokerage_sync.assert_awaited_once_with(session, user_id=user_id, settings=settings)
+        money_sync.assert_not_awaited()
+        lookup.assert_awaited_once_with(session, user_id=user_id, symbol="AAPL", settings=settings)
+        assert result == fake_result
+
+    await engine.dispose()
+
+
+def test_run_stock_research_tool_is_registered_and_brokerage_backed() -> None:
+    tool = next(item for item in TOOLS if item.get("name") == "run_stock_research")
+
+    assert tool["input_schema"]["required"] == ["symbol"]
+    assert "deep dive" in tool["description"]
+    assert "run_stock_research" in _BROKERAGE_BACKED_TOOLS
+
+
+async def test_run_assistant_turn_escalates_to_sonnet_after_stock_research_tool_call() -> None:
+    tool_use_response = SimpleNamespace(
+        stop_reason="tool_use",
+        content=[
+            SimpleNamespace(
+                type="tool_use", id="tool-1", name="run_stock_research", input={"symbol": "NVDA"}
+            )
+        ],
+    )
+    final_response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text="Here's the research.", citations=None)],
+    )
+    mock_client = MagicMock()
+    mock_client.messages.create = AsyncMock(side_effect=[tool_use_response, final_response])
+
+    with (
+        patch("app.services.assistant.AsyncAnthropic", return_value=mock_client),
+        patch(
+            "app.services.assistant._execute_tool",
+            new=AsyncMock(return_value={"symbol": "NVDA"}),
+        ),
+    ):
+        result = await run_assistant_turn(
+            None,
+            user_id=uuid4(),
+            settings=Settings(anthropic_api_key="test-key"),
+            history=[],
+            user_message="Give me a full research report on NVDA",
+            section="investing",
+        )
+
+    first_model = mock_client.messages.create.await_args_list[0].kwargs["model"]
+    second_model = mock_client.messages.create.await_args_list[1].kwargs["model"]
+    assert first_model == MODEL
+    assert second_model == RESEARCH_MODEL
+    assert result.reply == "Here's the research."
+
+
+async def test_run_assistant_turn_stays_on_the_default_model_without_stock_research() -> None:
+    final_response = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text="Your cash balance is $500.", citations=None)],
+    )
+    mock_client = MagicMock()
+    mock_client.messages.create = AsyncMock(return_value=final_response)
+
+    with patch("app.services.assistant.AsyncAnthropic", return_value=mock_client):
+        await run_assistant_turn(
+            None,
+            user_id=uuid4(),
+            settings=Settings(anthropic_api_key="test-key"),
+            history=[],
+            user_message="What's my cash balance?",
+            section="money",
+        )
+
+    assert mock_client.messages.create.await_args_list[0].kwargs["model"] == MODEL
+
+
+def test_system_prompt_directs_deep_dives_to_stock_research_tool() -> None:
+    assert "run_stock_research" in SYSTEM_PROMPT
+    assert "deep dive" in SYSTEM_PROMPT
+
+
+def test_system_prompt_treats_indicators_and_filings_as_context_not_signals() -> None:
+    assert "not trading signals" in SYSTEM_PROMPT

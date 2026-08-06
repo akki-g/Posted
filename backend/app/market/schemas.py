@@ -204,3 +204,63 @@ class StockHistoryResponse(MarketModel):
     last_updated: datetime
     coverage_note: str
     is_demo: bool = False
+
+
+class MovingAverages(MarketModel):
+    sma_20: float | None = None
+    sma_50: float | None = None
+    sma_200: float | None = None
+    ema_12: float | None = None
+    ema_26: float | None = None
+    read: str
+
+
+class MacdIndicator(MarketModel):
+    macd_line: float | None = None
+    signal_line: float | None = None
+    histogram: float | None = None
+    read: str
+
+
+class RsiIndicator(MarketModel):
+    value: float | None = None
+    read: str
+
+
+class StochasticIndicator(MarketModel):
+    percent_k: float | None = None
+    percent_d: float | None = None
+    read: str
+
+
+class BollingerBandsIndicator(MarketModel):
+    upper: float | None = None
+    middle: float | None = None
+    lower: float | None = None
+    read: str
+
+
+class AtrIndicator(MarketModel):
+    value: float | None = None
+    read: str
+
+
+class VolumeTrendIndicator(MarketModel):
+    latest_volume: int | None = None
+    average_volume: float | None = None
+    ratio: float | None = None
+    read: str
+
+
+class TechnicalIndicators(MarketModel):
+    symbol: str
+    as_of: datetime
+    data_points: int
+    moving_averages: MovingAverages
+    macd: MacdIndicator
+    rsi: RsiIndicator
+    stochastic: StochasticIndicator
+    bollinger_bands: BollingerBandsIndicator
+    atr: AtrIndicator
+    volume_trend: VolumeTrendIndicator
+    insufficient_history_notes: list[str]
