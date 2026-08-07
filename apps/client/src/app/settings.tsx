@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  Check,
   ChevronRight,
   Database,
   LockKeyhole,
@@ -139,10 +140,12 @@ export default function SettingsScreen() {
   const smsLinkStatus = useQuery({ queryKey: ['sms-link-status'], queryFn: api.smsLinkStatus });
   const [phoneInput, setPhoneInput] = useState('');
   const [codeInput, setCodeInput] = useState('');
+  const [smsConsentChecked, setSmsConsentChecked] = useState(false);
   const requestSmsLink = useMutation({
     mutationFn: () => api.requestSmsLink(phoneInput),
     onSuccess: async () => {
       setCodeInput('');
+      setSmsConsentChecked(false);
       await queryClient.invalidateQueries({ queryKey: ['sms-link-status'] });
     },
   });
@@ -157,6 +160,7 @@ export default function SettingsScreen() {
   const unlinkSmsLink = useMutation({
     mutationFn: api.unlinkSmsLink,
     onSuccess: async () => {
+      setSmsConsentChecked(false);
       await queryClient.invalidateQueries({ queryKey: ['sms-link-status'] });
     },
   });
@@ -378,18 +382,28 @@ export default function SettingsScreen() {
             ) : null}
           </View>
           {smsLinkStatus.data?.status !== 'verified' && smsLinkStatus.data?.status !== 'pending' ? (
-            <Text style={styles.connectionHelp}>
-              By entering your number and tapping "Send code," you agree to receive SMS messages
-              from Posted to verify your number and answer questions about your account. Message
-              frequency varies. Msg&data rates may apply. Reply STOP to opt out, HELP for help.{' '}
-              <Text style={styles.consentLink} onPress={() => router.push('/privacy')}>
-                Privacy Policy
+            <View style={styles.consentRow}>
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: smsConsentChecked }}
+                hitSlop={8}
+                onPress={() => setSmsConsentChecked((checked) => !checked)}
+                style={[styles.consentCheckbox, smsConsentChecked && styles.consentCheckboxChecked]}>
+                {smsConsentChecked ? <Check size={12} color={colors.white} strokeWidth={3} /> : null}
+              </Pressable>
+              <Text style={styles.consentText}>
+                I agree to receive SMS messages from Posted to verify my number and answer
+                questions about my account. Message frequency varies. Msg&data rates may apply.
+                Reply STOP to opt out, HELP for help.{' '}
+                <Text style={styles.consentLink} onPress={() => router.push('/privacy')}>
+                  Privacy Policy
+                </Text>
+                {' · '}
+                <Text style={styles.consentLink} onPress={() => router.push('/terms')}>
+                  Terms of Service
+                </Text>
               </Text>
-              {' · '}
-              <Text style={styles.consentLink} onPress={() => router.push('/terms')}>
-                Terms of Service
-              </Text>
-            </Text>
+            </View>
           ) : null}
           {smsLinkStatus.data?.status !== 'verified' ? (
             <View style={styles.smsFormRow}>
@@ -406,11 +420,17 @@ export default function SettingsScreen() {
                     value={phoneInput}
                   />
                   <Pressable
-                    disabled={requestSmsLink.isPending || phoneInput.trim().length < 8}
+                    disabled={
+                      requestSmsLink.isPending ||
+                      phoneInput.trim().length < 8 ||
+                      !smsConsentChecked
+                    }
                     onPress={() => requestSmsLink.mutate()}
                     style={[
                       styles.connectButton,
-                      (requestSmsLink.isPending || phoneInput.trim().length < 8) &&
+                      (requestSmsLink.isPending ||
+                        phoneInput.trim().length < 8 ||
+                        !smsConsentChecked) &&
                         styles.connectButtonDisabled,
                     ]}>
                     <Text style={styles.connectButtonText}>
@@ -588,6 +608,26 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   consentLink: { color: colors.tealDark, fontWeight: '700' },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  consentCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: roles.borderHairlineStrong,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  consentCheckboxChecked: { backgroundColor: colors.teal, borderColor: colors.teal },
+  consentText: { flex: 1, color: colors.inkMuted, fontSize: 10, lineHeight: 15 },
   connectionSuccess: {
     color: colors.positive,
     fontSize: 10,
